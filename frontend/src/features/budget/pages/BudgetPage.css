@@ -1,0 +1,422 @@
+/* BUD-01-01·BUD-03·BUD-04-03 경비 화면 스타일 (와이어프레임 D-11) */
+/* TODO(공통): shared/styles/variables.css가 생기면 아래 색·간격 값을 그 변수로 바꾼다. */
+
+.budget-page {
+  --budget-text: #1f2328;
+  --budget-sub: #6b7280;
+  --budget-line: #e5e7eb;
+  --budget-soft: #f3f4f6;
+  --budget-accent: #2563eb;
+
+  box-sizing: border-box;
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 32px 24px;
+  color: var(--budget-text);
+  font-size: 15px;
+  line-height: 1.5;
+  text-align: left;
+}
+
+.budget-page *,
+.budget-page *::before,
+.budget-page *::after {
+  box-sizing: border-box;
+}
+
+.budget-page button {
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+
+/* 배치: 왼쪽 경비, 오른쪽 환율 위젯 (스크롤해도 오른쪽 위에 떠 있음) */
+.budget-page--with-aside {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 280px;
+  gap: 24px;
+  align-items: start;
+  max-width: 1240px;
+}
+
+.budget-main {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.budget-aside {
+  position: sticky;
+  top: 24px;
+}
+
+/* 카드 한 덩어리 (경비 합계 / 공통 경비 / 개인 경비 / 환율) */
+.budget-box {
+  padding: 24px;
+  border: 1px solid var(--budget-line);
+  border-radius: 12px;
+  background: #fff;
+}
+
+.budget-box__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.budget-box__head .budget-section__title {
+  margin: 0;
+}
+
+.budget-section__title {
+  margin: 0 0 12px;
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.budget-count {
+  color: var(--budget-sub);
+  font-size: 13px;
+  font-weight: 400;
+}
+
+.budget-outline-button {
+  padding: 6px 14px;
+  border: 1px solid var(--budget-text);
+  border-radius: 6px;
+  background: #fff;
+  font-size: 14px !important;
+}
+
+/* 네모 작은 버튼 (메모 아이콘, [···], [+]) */
+.budget-square {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid var(--budget-line);
+  border-radius: 6px;
+  background: #fff;
+  color: var(--budget-sub) !important;
+  font-size: 13px;
+}
+
+/* 분류 탭: 일차 탭과 같은 알약 모양 */
+.budget-tabs {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.budget-tab {
+  padding: 4px 14px;
+  border: 1px solid var(--budget-line);
+  border-radius: 999px;
+  background: #fff;
+  font-size: 14px !important;
+}
+
+.budget-tab--active {
+  border-color: var(--budget-text);
+  background: var(--budget-text);
+  color: #fff !important;
+}
+
+/* 공통 경비 한 줄: 이름(+작은 계산 방식·배지) / 금액 / 메모 / [···] */
+.budget-common-list,
+.budget-card__list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.budget-common-item {
+  display: grid;
+  grid-template-columns: 1fr auto 28px 28px;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--budget-line);
+}
+
+.budget-common-item__name {
+  font-weight: 600;
+}
+
+.budget-common-item__calc {
+  margin-left: 10px;
+  color: var(--budget-sub);
+  font-size: 12px;
+  font-weight: 400;
+}
+
+.budget-common-item__amount {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.budget-unknown {
+  color: var(--budget-sub);
+}
+
+/* 메모 아이콘: 빈 아이콘 / 채워진 아이콘 */
+.budget-memo svg {
+  display: block;
+  fill: none;
+  stroke: var(--budget-sub);
+  stroke-width: 1.2;
+}
+
+.budget-memo--filled svg rect {
+  fill: var(--budget-text);
+  stroke: var(--budget-text);
+}
+
+.budget-memo--filled svg path {
+  stroke: #fff;
+}
+
+.budget-icon-button {
+  min-width: 24px;
+  height: 24px;
+  padding: 0 4px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--budget-sub) !important;
+}
+
+.budget-icon-button:hover {
+  background: rgba(0, 0, 0, 0.05);
+}
+
+/* 개인 경비 카드 (참여자마다 배경색, 내 카드는 테두리 강조) */
+.budget-cards {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+  align-items: start;
+}
+
+.budget-card {
+  padding: 14px 16px;
+  border: 1px solid var(--budget-line);
+  border-radius: 10px;
+}
+
+.budget-card--blue { background: #eaf1fe; border-color: #c9dafb; }
+.budget-card--purple { background: #f3effe; border-color: #ddd3fb; }
+.budget-card--green { background: #ecf7ec; border-color: #cbe8cb; }
+.budget-card--orange { background: #fdf2e7; border-color: #f6dcc0; }
+.budget-card--pink { background: #fdecf2; border-color: #f7cfdd; }
+.budget-card--mine { border-color: #8fb2f5; }
+
+.budget-card__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  min-height: 28px;
+}
+
+.budget-card__name {
+  font-weight: 700;
+}
+
+.budget-card__total {
+  margin: 2px 0 6px;
+  color: var(--budget-sub);
+  font-size: 12px;
+}
+
+.budget-card__item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  min-height: 30px;
+  font-size: 14px;
+}
+
+.budget-card__amount {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-variant-numeric: tabular-nums;
+}
+
+.budget-more {
+  margin-top: 4px;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--budget-accent) !important;
+  font-size: 13px;
+}
+
+/* BUD-03-03 "경비 합계" 카드 안 내 1인 경비 */
+.budget-myshare {
+  padding: 18px 20px;
+  border-radius: 10px;
+  background: var(--budget-soft);
+}
+
+.budget-myshare__label {
+  color: var(--budget-sub);
+  font-size: 13px;
+}
+
+.budget-myshare__krw {
+  font-size: 26px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.budget-myshare__currency {
+  font-size: 16px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.budget-myshare__breakdown,
+.budget-myshare__partial {
+  color: var(--budget-sub);
+  font-size: 12px;
+}
+
+/* BUD-03-01 [전체] 탭 맨 오른쪽 아래 공통 경비 합계 */
+.budget-common-total {
+  margin-top: 14px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.budget-common-total__krw {
+  font-size: 17px;
+  font-weight: 700;
+}
+
+.budget-common-total__currency {
+  color: var(--budget-sub);
+  font-size: 13px;
+}
+
+/* BUD-03-04 부분 합계 안내 (밑줄 글자, 누르면 목록) */
+.budget-partial__toggle {
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--budget-sub) !important;
+  font-size: inherit !important;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.budget-partial__list {
+  margin: 6px 0 0;
+  padding: 0;
+  list-style: none;
+  color: var(--budget-sub);
+  font-size: 12px;
+}
+
+/* 불러오는 중: 빈 카드 3개 */
+.budget-skeleton {
+  display: grid;
+  gap: 12px;
+}
+
+.budget-skeleton__card {
+  height: 72px;
+  border-radius: 12px;
+  background: var(--budget-soft);
+}
+
+/* 항목 없음·실패 안내 */
+.budget-message {
+  padding: 48px 0;
+  color: var(--budget-sub);
+  text-align: center;
+}
+
+.budget-retry {
+  padding: 8px 16px;
+  border: 1px solid var(--budget-line);
+  border-radius: 8px;
+  background: #fff;
+}
+
+/* BUD-04-03 환율 위젯 */
+.budget-rate {
+  padding: 20px;
+  border: 1px solid var(--budget-line);
+  border-radius: 12px;
+  background: #fff;
+}
+
+.budget-rate__calc {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* 칸 하나: 위에 이름, 왼쪽 큰 숫자, 오른쪽 작은 "100 엔" */
+.budget-rate__field {
+  display: block;
+  padding: 10px 14px;
+  border: 1px solid var(--budget-line);
+  border-radius: 10px;
+  cursor: text;
+}
+
+.budget-rate__field:focus-within {
+  border-color: var(--budget-accent);
+}
+
+.budget-rate__field-name {
+  display: block;
+  color: var(--budget-sub);
+  font-size: 11px;
+}
+
+.budget-rate__field-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.budget-rate__input {
+  flex: 1;
+  min-width: 0;
+  padding: 2px 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  font: inherit;
+  font-size: 20px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.budget-rate__field-unit {
+  flex-shrink: 0;
+  color: var(--budget-sub);
+  font-size: 12px;
+}
+
+.budget-rate__equals {
+  color: var(--budget-sub);
+  text-align: center;
+}
+
+.budget-rate__note {
+  margin: 12px 0 0;
+  color: var(--budget-sub);
+  font-size: 11px;
+}
+
+.budget-rate__error {
+  margin: 0;
+  color: var(--budget-sub);
+}
