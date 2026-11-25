@@ -420,3 +420,200 @@
   margin: 0;
   color: var(--budget-sub);
 }
+
+/* BUD-01-02 경비 항목 추가 창 (와이어프레임 D-12) */
+/* TODO(공통): shared/components/Modal.tsx가 생기면 그쪽 스타일을 쓴다. */
+.budget-modal__backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.45);
+}
+
+.budget-modal {
+  width: 600px;
+  max-height: calc(100vh - 48px);
+  overflow-y: auto;
+  padding: 28px;
+  border-radius: 12px;
+  background: #fff;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.18);
+}
+
+.budget-modal__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.budget-modal__title {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 700;
+}
+
+.budget-modal__close {
+  width: 32px;
+  height: 32px;
+  border: none;
+  background: none;
+  font-size: 24px !important;
+  line-height: 1;
+}
+
+.budget-form__field {
+  display: block;
+  margin-bottom: 18px;
+}
+
+.budget-form__label {
+  display: block;
+  margin-bottom: 8px;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.budget-form__choices {
+  display: flex;
+  gap: 8px;
+}
+
+.budget-choice {
+  padding: 6px 14px;
+  border: 1px solid var(--budget-line);
+  border-radius: 6px;
+  background: #fff;
+  font-size: 14px !important;
+}
+
+.budget-choice--on {
+  border-color: var(--budget-text);
+  background: var(--budget-text);
+  color: #fff !important;
+}
+
+.budget-form__input,
+.budget-form__select {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--budget-line);
+  border-radius: 8px;
+  background: #fff;
+  font: inherit;
+}
+
+.budget-form__input:focus,
+.budget-form__select:focus {
+  border-color: var(--budget-accent);
+  outline: none;
+}
+
+.budget-form__input:disabled {
+  background: var(--budget-soft);
+}
+
+.budget-form__amount-row {
+  display: grid;
+  grid-template-columns: 1fr 120px;
+  gap: 8px;
+}
+
+.budget-form__foot {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 4px;
+  color: var(--budget-sub);
+  font-size: 12px;
+}
+
+.budget-form__hint {
+  display: block;
+  margin-top: 6px;
+  color: var(--budget-sub);
+  font-size: 13px;
+}
+
+.budget-form__error {
+  display: block;
+  margin-top: 4px;
+  color: #dc2626;
+  font-size: 12px;
+}
+
+.budget-form__check {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 10px;
+  font-size: 14px;
+}
+
+.budget-modal__actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.budget-primary-button {
+  padding: 8px 18px;
+  border: none;
+  border-radius: 6px;
+  background: var(--budget-text);
+  color: #fff !important;
+}
+
+.budget-primary-button:disabled {
+  background: #9ca3af;
+  cursor: not-allowed !important;
+}
+
+/* 화면 아래 가운데 상태 창 */
+/* TODO(공통): shared/components/Toast.tsx가 생기면 그쪽 스타일을 쓴다. */
+.budget-toast {
+  position: fixed;
+  bottom: 32px;
+  left: 50%;
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  padding: 14px 18px;
+  border-radius: 8px;
+  background: #1f2328;
+  color: #fff;
+  transform: translateX(-50%);
+}
+
+.budget-toast__close {
+  border: none;
+  background: none;
+  color: #fff !important;
+  font-size: 18px !important;
+}
+
+/* 금액 칸 안 오른쪽 통화 단위 ("30,000 엔") */
+.budget-form__amount-input {
+  position: relative;
+  display: block;
+}
+
+.budget-form__amount-input .budget-form__input {
+  padding-right: 48px;
+}
+
+.budget-form__amount-unit {
+  position: absolute;
+  top: 50%;
+  right: 14px;
+  color: var(--budget-text);
+  font-weight: 600;
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+
+.budget-form__input:disabled + .budget-form__amount-unit {
+  color: var(--budget-sub);
+}

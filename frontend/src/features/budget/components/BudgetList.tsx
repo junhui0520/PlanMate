@@ -7,6 +7,7 @@ import type {
   BudgetItem,
   BudgetListResponse,
   BudgetParticipant,
+  BudgetScope,
   BudgetTotal,
   CurrencyAmount,
 } from '../api/budgetApi.ts'
@@ -83,11 +84,13 @@ function CommonSection({
   memberCount,
   canEdit,
   commonTotal,
+  onAdd,
 }: {
   items: BudgetItem[]
   memberCount: number
   canEdit: boolean
   commonTotal: BudgetTotal
+  onAdd: () => void
 }) {
   const [tab, setTab] = useState<BudgetCategory | 'ALL'>('ALL')
   const shown = tab === 'ALL' ? items : items.filter((item) => item.category === tab)
@@ -98,9 +101,9 @@ function CommonSection({
         <h2 className="budget-section__title">
           공통 경비 <span className="budget-count">· {items.length}건</span>
         </h2>
-        {/* TODO(D): BUD-01-02 공통 경비 추가 창 */}
+        {/* BUD-01-02 공통 경비 추가 (소유자·편집 참여자만) */}
         {canEdit && (
-          <button type="button" className="budget-outline-button">
+          <button type="button" className="budget-outline-button" onClick={onAdd}>
             공통 경비 추가
           </button>
         )}
@@ -169,12 +172,14 @@ function PersonalCard({
   isMine,
   canEdit,
   color,
+  onAdd,
 }: {
   participant: BudgetParticipant
   items: BudgetItem[]
   isMine: boolean
   canEdit: boolean
   color: string
+  onAdd: () => void
 }) {
   const [expanded, setExpanded] = useState(false)
   const shown = expanded ? items : items.slice(0, PREVIEW_COUNT)
@@ -188,9 +193,9 @@ function PersonalCard({
           {participant.nickname}
           {isMine && ' (나)'}
         </span>
-        {/* TODO(D): BUD-01-02 내 개인 경비 추가 */}
+        {/* BUD-01-02 내 개인 경비 추가 (내 카드만) */}
         {isMine && canEdit && (
-          <button type="button" className="budget-square" aria-label="개인 경비 추가">
+          <button type="button" className="budget-square" aria-label="개인 경비 추가" onClick={onAdd}>
             +
           </button>
         )}
@@ -228,9 +233,11 @@ function PersonalCard({
 function PersonalSection({
   data,
   myPersonal,
+  onAdd,
 }: {
   data: BudgetListResponse
   myPersonal: CurrencyAmount[]
+  onAdd: () => void
 }) {
   const personalItems = data.items.filter((item) => item.scope === 'PERSONAL')
   const itemsOf = (memberId: number) => personalItems.filter((item) => item.createdBy === memberId)
@@ -263,6 +270,7 @@ function PersonalSection({
               isMine={isMine}
               canEdit={isMine && canEdit}
               color={CARD_COLORS[index % CARD_COLORS.length]}
+              onAdd={onAdd}
             />
           )
         })}
@@ -277,10 +285,12 @@ export default function BudgetList({
   data,
   commonTotal,
   myPersonal,
+  onAdd,
 }: {
   data: BudgetListResponse
   commonTotal: BudgetTotal
   myPersonal: CurrencyAmount[]
+  onAdd: (scope: BudgetScope) => void // BUD-01-02 추가 창 열기
 }) {
   const commonItems = data.items.filter((item) => item.scope === 'COMMON')
   const canEditCommon = data.myRole === 'OWNER' || data.myRole === 'EDITOR'
@@ -292,8 +302,9 @@ export default function BudgetList({
         memberCount={data.memberCount}
         canEdit={canEditCommon}
         commonTotal={commonTotal}
+        onAdd={() => onAdd('COMMON')}
       />
-      <PersonalSection data={data} myPersonal={myPersonal} />
+      <PersonalSection data={data} myPersonal={myPersonal} onAdd={() => onAdd('PERSONAL')} />
     </>
   )
 }

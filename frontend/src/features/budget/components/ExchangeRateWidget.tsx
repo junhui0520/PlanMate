@@ -1,7 +1,7 @@
 // BUD-04-03 환율 위젯: "[100] 엔 = [910] 원 · 11.24 기준", 어느 칸에 넣어도 반대 칸 계산(저장하지 않음)
 import { useEffect, useState } from 'react'
 import { getExchangeRate, type ExchangeRate } from '../api/budgetApi.ts'
-import { roundToCurrency } from '../utils/money.ts'
+import { formatAmountInput, MAX_AMOUNT_KRW, roundToCurrency } from '../utils/money.ts'
 
 // 칸 이름에 쓰는 나라·통화 이름 (없는 통화는 코드로 표시)
 const CURRENCY_LABEL: Record<string, { country: string; unitName: string }> = {
@@ -39,9 +39,14 @@ function RateCalculator({ rate }: { rate: ExchangeRate }) {
   const foreign = label(rate.currency)
   const krw = label('KRW')
 
+  // 사용자 요청으로 정함(기능정의서에 없음): 경비 금액과 같은 원화 1억 제한.
+  // 원화로 1억을 넘게 "늘리는" 입력만 막고, 줄이거나 지우는 입력은 항상 됨
+  const blocked = (nextKrw: number) => nextKrw > MAX_AMOUNT_KRW && nextKrw > (Number(krwText) || 0)
+
   // 외화 칸에 넣으면 원화 칸 계산
   const onForeignChange = (text: string) => {
     const cleaned = cleanNumber(text)
+    if (cleaned !== '' && blocked(Number(cleaned) * rate.ratePerOne)) return
     setForeignText(cleaned)
     setKrwText(cleaned === '' ? '' : toText(Number(cleaned) * rate.ratePerOne, 'KRW'))
   }
@@ -49,6 +54,7 @@ function RateCalculator({ rate }: { rate: ExchangeRate }) {
   // 원화 칸에 넣으면 외화 칸 계산
   const onKrwChange = (text: string) => {
     const cleaned = cleanNumber(text)
+    if (cleaned !== '' && blocked(Number(cleaned))) return
     setKrwText(cleaned)
     setForeignText(cleaned === '' ? '' : toText(Number(cleaned) / rate.ratePerOne, rate.currency))
   }
@@ -58,6 +64,7 @@ function RateCalculator({ rate }: { rate: ExchangeRate }) {
     <div className="budget-rate__calc">
       <RateField
         name={`${foreign.country} ${rate.currency}`}
+        currency={rate.currency}
         unitName={foreign.unitName}
         value={foreignText}
         onChange={onForeignChange}
@@ -65,7 +72,13 @@ function RateCalculator({ rate }: { rate: ExchangeRate }) {
       <span className="budget-rate__equals" aria-hidden="true">
         =
       </span>
-      <RateField name={`${krw.country} KRW`} unitName={krw.unitName} value={krwText} onChange={onKrwChange} />
+      <RateField
+        name={`${krw.country} KRW`}
+        currency="KRW"
+        unitName={krw.unitName}
+        value={krwText}
+        onChange={onKrwChange}
+      />
     </div>
   )
 }
@@ -73,11 +86,13 @@ function RateCalculator({ rate }: { rate: ExchangeRate }) {
 // 칸 하나: 위에 나라·통화 이름, 왼쪽 큰 숫자 입력, 오른쪽 작은 "100 엔"
 function RateField({
   name,
+  currency,
   unitName,
   value,
   onChange,
 }: {
   name: string
+  currency: string
   unitName: string
   value: string
   onChange: (text: string) => void
@@ -93,8 +108,9 @@ function RateField({
           onChange={(e) => onChange(e.target.value)}
           aria-label={`${unitName} 금액`}
         />
+        {/* 오른쪽 아래 금액은 세 자리마다 쉼표 (예: 1,234,567 원) */}
         <span className="budget-rate__field-unit">
-          {value} {unitName}
+          {formatAmountInput(value, currency)} {unitName}
         </span>
       </span>
     </label>

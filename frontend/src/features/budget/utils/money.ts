@@ -42,3 +42,37 @@ export function formatCurrencyAmounts(amounts: CurrencyAmount[]): string {
 export function formatKrwTotal(krw: number): string {
   return `약 ${formatMoney(krw, 'KRW')}`
 }
+
+// ---- 금액 입력 칸 (BUD-01-02) ----
+
+const UNIT_NAME: Record<string, string> = { KRW: '원', JPY: '엔', USD: '달러', EUR: '유로', CNY: '위안' }
+
+// 통화 단위 이름 (없는 통화는 코드). 예: JPY → 엔
+export function currencyUnitName(currency: string): string {
+  return UNIT_NAME[currency] ?? currency
+}
+
+// BUD-01-02 금액 최대 1억 (원화 기준)
+export const MAX_AMOUNT_KRW = 100_000_000
+
+/**
+ * 금액 칸 글자를 통화 자릿수에 맞게 정리하고 천 단위 쉼표를 붙인다.
+ * 숫자·소수점 말고는 지우고, 통화 자릿수를 넘는 소수는 자른다. 예: "30000" → "30,000"
+ */
+export function formatAmountInput(text: string, currency: string): string {
+  const digits = currencyDigits(currency)
+  const cleaned = text.replace(/[^0-9.]/g, '')
+  const [intRaw, ...rest] = cleaned.split('.')
+  const intPart = intRaw.replace(/^0+(?=\d)/, '') // 앞자리 0 정리 ("007" → "7")
+  const withComma = intPart === '' ? '' : Number(intPart).toLocaleString('ko-KR')
+  if (digits === 0 || rest.length === 0) return withComma
+  const decimals = rest.join('').slice(0, digits)
+  return `${withComma === '' ? '0' : withComma}.${decimals}`
+}
+
+// "30,000.5" → 30000.5, 빈칸이면 null
+export function parseAmountInput(text: string): number | null {
+  const cleaned = text.replace(/,/g, '')
+  if (cleaned === '' || cleaned === '.') return null
+  return Number(cleaned)
+}

@@ -4,7 +4,12 @@
 //          1) 아래 타입을 yaml에 맞추고
 //          2) 각 함수 안쪽을 shared/api/client.ts 호출로 바꾸고
 //          3) mockData.ts를 지운다. (화면 파일은 고치지 않아도 됨)
-import { mockGetBudgetList, mockGetBudgetSummary, mockGetExchangeRate } from '../mockData.ts'
+import {
+  mockAddBudgetItem,
+  mockGetBudgetList,
+  mockGetBudgetSummary,
+  mockGetExchangeRate,
+} from '../mockData.ts'
 
 // 경비 구분 (BUDGET_ITEM.SCOPE)
 export type BudgetScope = 'COMMON' | 'PERSONAL'
@@ -30,6 +35,17 @@ export interface BudgetItem {
   amountSource: AmountSource
   memo: string | null // 공통 경비만
   createdBy: number | null // 개인 경비 주인
+}
+
+// BUD-01-02 경비 항목 추가할 때 보내는 값 (만든 사람은 서버가 로그인 정보로 채움)
+export interface BudgetItemRequest {
+  scope: BudgetScope // 누른 버튼으로 정해짐
+  category: BudgetCategory
+  name: string // 1~50자, 앞뒤 공백 제거
+  calcType: CalcType | null // 공통만 필수, 개인은 null
+  amount: number | null // 가격 확인 전이면 null
+  currency: string
+  memo: string | null // 공통만, 0~200자
 }
 
 export interface BudgetParticipant {
@@ -103,6 +119,11 @@ export function getBudgetList(tripId: number): Promise<BudgetListResponse> {
 // BUD-03-01·03·04 경비 합계 (공통 경비 합계, 내 1인 경비, 부분 합계)
 export function getBudgetSummary(tripId: number): Promise<BudgetSummaryResponse> {
   return mockGetBudgetSummary(tripId)
+}
+
+// BUD-01-02 경비 항목 추가. 실패하면 Error.message에 서버 안내 문구가 들어 있음
+export function addBudgetItem(tripId: number, request: BudgetItemRequest): Promise<BudgetItem> {
+  return mockAddBudgetItem(tripId, request)
 }
 
 // BUD-04-03 환율 위젯: 여행 도시 통화의 오늘 환율 (모든 여행이 같은 오늘 환율을 씀)
