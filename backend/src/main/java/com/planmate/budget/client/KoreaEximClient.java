@@ -1,6 +1,8 @@
 package com.planmate.budget.client;
 
 import java.math.BigDecimal;
+import java.net.CookieManager;
+import java.net.http.HttpClient;
 import java.time.Duration;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
@@ -10,7 +12,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.http.client.SimpleClientHttpRequestFactory;
+import org.springframework.http.client.JdkClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
@@ -37,8 +39,13 @@ public class KoreaEximClient {
 
 	// 키가 없는 컴퓨터에서도 서버는 켜지게 기본값을 빈 값으로 둔다(부를 때 검사).
 	public KoreaEximClient(@Value("${EXCHANGE_API_KEY:}") String apiKey) {
-		SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();
-		requestFactory.setConnectTimeout(Duration.ofSeconds(5));
+		// 은행 서버가 가끔 쿠키를 주고 같은 주소로 다시 보내므로(302), 쿠키를 기억하고 따라간다.
+		HttpClient httpClient = HttpClient.newBuilder()
+				.connectTimeout(Duration.ofSeconds(5))
+				.followRedirects(HttpClient.Redirect.NORMAL)
+				.cookieHandler(new CookieManager())
+				.build();
+		JdkClientHttpRequestFactory requestFactory = new JdkClientHttpRequestFactory(httpClient);
 		requestFactory.setReadTimeout(Duration.ofSeconds(10));
 		this.restClient = RestClient.builder().baseUrl(BASE_URL).requestFactory(requestFactory).build();
 		this.apiKey = apiKey;
