@@ -61,6 +61,14 @@ public enum ErrorCode {
     COMMUNITY_FEATURE_RESTRICTED(HttpStatus.FORBIDDEN, "이용 제한 중에는 커뮤니티 기능을 쓸 수 없어요."),
     // PUB-06-01 북마크 회원당 200개
     BOOKMARK_LIMIT_EXCEEDED(HttpStatus.CONFLICT, "북마크는 최대 200개까지 담을 수 있어요."),
+    // PUB-01-01·02·03 공유하기·미리보기·게시, PUB-02-05 제목 수정
+    POST_TITLE_REQUIRED(HttpStatus.BAD_REQUEST, "공개용 제목을 입력해 주세요."),
+    POST_RESTRICTED(HttpStatus.FORBIDDEN, "이용 제한 중에는 게시할 수 없어요."),
+    POST_OWNER_ONLY(HttpStatus.FORBIDDEN, "여행 소유자만 공개할 수 있어요."),
+    POST_ALREADY_PUBLIC(HttpStatus.CONFLICT, "이미 공개한 여행이에요."),
+    POST_TRIP_TRASHED(HttpStatus.CONFLICT, "휴지통에 있는 여행은 게시할 수 없어요."),
+    // PUB-02-03 관리자가 비공개로 바꾼 게시물은 소유자가 다시 공유할 수 없음
+    POST_ADMIN_HIDDEN(HttpStatus.FORBIDDEN, "관리자가 비공개로 바꾼 게시물이라 다시 공유할 수 없어요."),
 
     ;
 
