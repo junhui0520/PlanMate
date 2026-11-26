@@ -13,6 +13,9 @@ info:
     | 상수 | HTTP 상태 | 문구 | 기능 ID |
     |---|---|---|---|
     | TRIP_LIMIT_EXCEEDED | 409 | 참여 중인 여행을 포함해 여행은 최대 3개까지 가질 수 있어요. 기존 여행을 삭제하거나 나가면 더 만들 수 있어요. | TRP-01-01·03 |
+    | TRIP_END_DATE_BEFORE_START | 400 | 종료일은 시작일과 같거나 이후여야 해요. | TRP-01-01·03 |
+    | TRIP_PERIOD_TOO_LONG | 400 | 여행 기간은 최대 7일까지 만들 수 있어요. | TRP-01-01·03 |
+    | TRIP_START_DATE_OUT_OF_RANGE | 400 | 시작일은 오늘부터 1년 후까지 고를 수 있어요. | TRP-01-01·03 |
     | CITY_SEARCH_FAILED | 502 | 도시를 검색하지 못했어요. 다시 시도해 주세요. | TRP-01-02 |
     | CITY_INFO_FAILED | 502 | 도시 정보를 불러오지 못했어요. 다시 시도해 주세요. | TRP-01-02 |
     | TRIP_CREATE_FAILED | 500 | 여행을 만들지 못했어요. 잠시 후 다시 시도해 주세요. | TRP-01-03 |
@@ -243,8 +246,10 @@ paths:
                     message: null
         '400':
           description: |
-            입력값 오류 (INVALID_INPUT). fieldErrors의 문구는 기능정의서 TRP-01-01 '예외·오류 안내 문구'.
-            화면은 field 이름에 맞는 입력 칸 아래에 message를 표시한다.
+            입력값 오류. 화면은 아래처럼 해당 입력 칸 아래에 message를 표시한다.
+            - INVALID_INPUT: 칸 하나만 보고 알 수 있는 오류(제목·인원·빈 칸). fieldErrors의 field가 칸 이름이다.
+            - TRIP_END_DATE_BEFORE_START·TRIP_PERIOD_TOO_LONG: 종료일 칸에 표시 (fieldErrors는 빈 배열)
+            - TRIP_START_DATE_OUT_OF_RANGE: 시작일 칸에 표시 (여행지 시간대가 있어야 판단할 수 있어 서버 서비스에서 검사)
           content:
             application/json:
               schema:
@@ -258,9 +263,30 @@ paths:
                       fieldErrors:
                         - field: "title"
                           message: "여행 제목을 입력해 주세요."
-                        - field: "endDate"
-                          message: "여행 기간은 최대 7일까지 만들 수 있어요."
+                        - field: "peopleCount"
+                          message: "여행 인원은 1~20 사이의 정수로 입력해 주세요."
                     message: "입력값을 확인해 주세요."
+                TRIP_END_DATE_BEFORE_START:
+                  value:
+                    success: false
+                    data:
+                      code: "TRIP_END_DATE_BEFORE_START"
+                      fieldErrors: []
+                    message: "종료일은 시작일과 같거나 이후여야 해요."
+                TRIP_PERIOD_TOO_LONG:
+                  value:
+                    success: false
+                    data:
+                      code: "TRIP_PERIOD_TOO_LONG"
+                      fieldErrors: []
+                    message: "여행 기간은 최대 7일까지 만들 수 있어요."
+                TRIP_START_DATE_OUT_OF_RANGE:
+                  value:
+                    success: false
+                    data:
+                      code: "TRIP_START_DATE_OUT_OF_RANGE"
+                      fieldErrors: []
+                    message: "시작일은 오늘부터 1년 후까지 고를 수 있어요."
         '401':
           $ref: './common.yaml#/components/responses/Unauthorized'
         '403':
@@ -387,14 +413,15 @@ components:
       type: object
       description: |
         TRP-01-03 여행 생성 입력. 화면 검사(TRP-01-01)와 같은 규칙을 서버도 다시 검사한다.
-        | 칸 | 규칙 | 어기면 fieldErrors 문구 |
+        | 칸 | 규칙 | 어기면 |
         |---|---|---|
-        | title | 앞뒤 공백 제거 후 1~50자, 공백만 불가. 제어문자는 공백 1칸으로 바꿔 저장 | "여행 제목을 입력해 주세요." (비었을 때) |
-        | cityId | 필수, CITY에 있는 도시 | (문구 미정 - 기능정의서에 없음) |
-        | startDate | 실제 날짜, 여행지 현지 오늘 ~ 1년 후(다음 해 같은 날짜) | "시작일은 오늘부터 1년 후까지 고를 수 있어요." |
-        | endDate | 종료일 >= 시작일 | "종료일은 시작일과 같거나 이후여야 해요." |
-        | endDate | 일수(종료일 - 시작일 + 1) 1~7일 | "여행 기간은 최대 7일까지 만들 수 있어요." |
-        | peopleCount | 정수 1~20 | "여행 인원은 1~20 사이의 정수로 입력해 주세요." |
+        | title | 앞뒤 공백 제거 후 1~50자(이모지 1자), 공백만 불가. 제어문자는 공백 1칸으로 바꿔 저장 | 비었으면 INVALID_INPUT "여행 제목을 입력해 주세요.", 50자 초과면 INVALID_INPUT "입력값을 확인해 주세요." |
+        | cityId | 필수, CITY에 있는 도시 | INVALID_INPUT "입력값을 확인해 주세요." |
+        | startDate | 필수, 실제 날짜, 여행지 현지 오늘 ~ 1년 후(다음 해 같은 날짜) | TRIP_START_DATE_OUT_OF_RANGE |
+        | endDate | 필수, 종료일 >= 시작일 | TRIP_END_DATE_BEFORE_START |
+        | endDate | 일수(종료일 - 시작일 + 1) 1~7일 | TRIP_PERIOD_TOO_LONG |
+        | peopleCount | 정수 1~20 | INVALID_INPUT "여행 인원은 1~20 사이의 정수로 입력해 주세요." |
+        날짜·인원 칸에 날짜·숫자가 아닌 값이 오면 본문을 읽지 못해 INVALID_INPUT(fieldErrors 빈 배열)이다.
         공개 여부는 받지 않는다(공개는 PUB-01 [공유하기]로만).
       required: [requestKey, title, cityId, startDate, endDate, peopleCount]
       properties:
@@ -404,7 +431,7 @@ components:
           type: string
           minLength: 1
           maxLength: 50
-          description: "여행 제목 (TITLE)"
+          description: "여행 제목 (TITLE). 글자 수는 코드 포인트 기준(이모지 1자)"
         cityId:
           $ref: './common.yaml#/components/schemas/Id'
         startDate:
