@@ -22,8 +22,11 @@ import com.planmate.budget.dto.BudgetSummaryResponse.MyShareTotal;
 import com.planmate.budget.dto.ExchangeRateResponse;
 import com.planmate.budget.entity.BudgetItem;
 import com.planmate.budget.repository.BudgetItemRepository;
+import com.planmate.common.exception.BusinessException;
+import com.planmate.common.exception.ErrorCode;
 import com.planmate.common.security.AccountStatusChecker;
 import com.planmate.common.security.TripAccessChecker;
+import com.planmate.trip.service.TripService;
 
 import lombok.RequiredArgsConstructor;
 
@@ -45,17 +48,20 @@ public class BudgetSummaryService {
 	private final ExchangeRateService exchangeRateService;
 	private final AccountStatusChecker accountStatusChecker; // A: 로그인 회원
 	private final TripAccessChecker tripAccessChecker; // A: 여행 참여자·휴지통 검사
+	private final TripService tripService; // B: 여행 인원 (findBasicInfo)
 
 	/**
 	 * 여행의 경비 합계.
-	 * TODO(B에 요청): peopleCount는 TripService(여행 인원, TRP-01·03)에서 받는다. 생기면 매개변수에서 뺀다.
+	 * 여행 인원(1인당 금액 x 인원, 공통 합계 / 인원)은 B의 여행 기본 정보에서 읽는다.
 	 * 권한: 로그인한 이 여행의 참여자(소유자·편집·조회), 휴지통 여행은 막음 (ACC-07). '내 1인 경비'는 로그인 회원 기준.
-	 * 합계 API 주소는 B의 TripStatusReader·여행 인원이 생긴 뒤 연다(11/26 결정).
 	 */
 	@Transactional(readOnly = true)
-	public BudgetSummaryResponse getSummary(Long tripId, int peopleCount) {
+	public BudgetSummaryResponse getSummary(Long tripId) {
 		Long myMemberId = accountStatusChecker.requireLoginMemberId();
 		tripAccessChecker.requireParticipant(tripId, myMemberId);
+		int peopleCount = tripService.findBasicInfo(tripId)
+				.orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_ACCESSIBLE))
+				.peopleCount();
 		List<BudgetItem> items = budgetItemRepository.findByTripIdOrderByItemIdAsc(tripId);
 		Map<String, BigDecimal> krwPerOne = new HashMap<>();
 		for (ExchangeRateResponse rate : exchangeRateService.getTodayRates()) { // BUD-04-01 오늘 환율(표)

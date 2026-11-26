@@ -2,6 +2,7 @@ package com.planmate.budget.service;
 
 import java.math.BigDecimal;
 import java.text.DecimalFormat;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -10,6 +11,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.planmate.budget.dto.BudgetItemRequest;
+import com.planmate.budget.dto.BudgetListResponse;
 import com.planmate.budget.dto.BudgetItemResponse;
 import com.planmate.budget.dto.ExchangeRateResponse;
 import com.planmate.budget.entity.BudgetItem;
@@ -19,6 +21,9 @@ import com.planmate.common.exception.BusinessException;
 import com.planmate.common.exception.ErrorCode;
 import com.planmate.common.security.AccountStatusChecker;
 import com.planmate.common.security.TripAccessChecker;
+import com.planmate.participant.entity.TripMember;
+import com.planmate.trip.dto.TripBasicInfo;
+import com.planmate.trip.service.TripService;
 
 import lombok.RequiredArgsConstructor;
 
@@ -39,30 +44,48 @@ public class BudgetService {
 	private final ExchangeRateService exchangeRateService;
 	private final AccountStatusChecker accountStatusChecker; // A: 로그인 회원
 	private final TripAccessChecker tripAccessChecker; // A: 여행 참여자·역할·휴지통 검사
+	private final TripService tripService; // B: 여행 인원·날짜·나라 코드 (findBasicInfo)
 
 	/**
-	 * BUD-01-01 여행 경비 목록 (공통·개인 모두, 추가한 순서).
+	 * BUD-01-01 여행 경비 목록 (공통·개인 모두, 추가한 순서) + 경비 탭이 쓰는 여행 정보.
 	 * 개인 경비도 모든 참여자가 볼 수 있다.
 	 * 권한: 로그인한 이 여행의 참여자(소유자·편집·조회), 휴지통 여행은 막음 (ACC-07)
+	 * TODO(A에 요청): participants(참여자 닉네임)는 ParticipantService·MemberService가 생기면 채운다. 지금은 빈 목록.
 	 */
 	@Transactional(readOnly = true)
-	public List<BudgetItemResponse> getBudgetItems(Long tripId) {
+	public BudgetListResponse getBudgetList(Long tripId) {
 		Long memberId = accountStatusChecker.requireLoginMemberId();
-		tripAccessChecker.requireParticipant(tripId, memberId);
-		return budgetItemRepository.findByTripIdOrderByItemIdAsc(tripId).stream()
+		TripMember.Role myRole = tripAccessChecker.requireParticipant(tripId, memberId);
+		TripBasicInfo trip = tripInfo(tripId);
+		List<BudgetItemResponse> items = budgetItemRepository.findByTripIdOrderByItemIdAsc(tripId).stream()
 				.map(BudgetItemResponse::from)
 				.toList();
+		return new BudgetListResponse(tripId, CountryCurrency.of(trip.countryCode()), trip.peopleCount(),
+				tripDays(trip), memberId, myRole, List.of(), items);
+	}
+
+	/**
+	 * B의 여행 기본 정보 (인원·시작일·종료일·나라 코드). 참여자 검사를 통과한 뒤 부른다.
+	 * 그사이 여행이 지워졌으면 참여자 검사와 같은 "볼 수 없는 내용"으로 막는다.
+	 */
+	TripBasicInfo tripInfo(Long tripId) {
+		return tripService.findBasicInfo(tripId)
+				.orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_ACCESSIBLE));
+	}
+
+	// 여행 일수: 시작일~종료일 (당일치기 1일, 최대 7일)
+	static int tripDays(TripBasicInfo trip) {
+		return (int) ChronoUnit.DAYS.between(trip.startDate(), trip.endDate()) + 1;
 	}
 
 	/**
 	 * BUD-01-02 경비 항목 추가. 화면에서 막는 값도 서버에서 다시 검사한다(AGENTS §6).
 	 * 권한: 공통·개인 모두 소유자·편집 참여자만(조회 참여자 불가), 저장 직전에 역할을 다시 확인한다(ACC-07).
-	 * 추가 주소(POST /api/trips/{tripId}/budget-items)는 B의 TripStatusReader가 생긴 뒤 연다.
 	 * TODO(B에 요청): 저장 후 다른 참여자 화면 반영은 SyncService (COL-06-01)
-	 * TODO(B에 요청): peopleCount(여행 인원)는 TripService에서 받는다. 지금은 매개변수(예산 기준 계산에만 씀).
+	 * 예산 기준 계산(BUD-02-01)의 여행 인원은 B의 여행 기본 정보에서 읽는다.
 	 */
 	@Transactional
-	public BudgetItemResponse addBudgetItem(Long tripId, int peopleCount, BudgetItemRequest req) {
+	public BudgetItemResponse addBudgetItem(Long tripId, BudgetItemRequest req) {
 		Long memberId = accountStatusChecker.requireLoginMemberId();
 		if (req.scope() == null || req.category() == null) {
 			throw new BusinessException(ErrorCode.INVALID_INPUT);
@@ -79,8 +102,9 @@ public class BudgetService {
 		checkCalcType(common, req.calcType());
 		String currency = checkCurrency(req.currency());
 
-		// BUD-02-01 예산 기준 계산이면 금액은 서버가 정해진 산식으로만 계산한다
-		RuleResult rule = req.budgetRule() == null ? null : applyBudgetRule(req, common, currency, peopleCount);
+		// BUD-02-01 예산 기준 계산이면 금액은 서버가 정해진 산식으로만 계산한다 (여행 인원은 B의 여행 정보)
+		RuleResult rule = req.budgetRule() == null ? null
+				: applyBudgetRule(req, common, currency, tripInfo(tripId).peopleCount());
 		BigDecimal amount = rule != null ? rule.total() : checkAmount(req.amount(), req.priceUnknown(), currency);
 		checkLimit(tripId, memberId, req.scope());
 

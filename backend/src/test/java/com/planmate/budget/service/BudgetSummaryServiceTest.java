@@ -10,9 +10,11 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;
@@ -31,6 +33,8 @@ import com.planmate.common.exception.BusinessException;
 import com.planmate.common.exception.ErrorCode;
 import com.planmate.common.security.AccountStatusChecker;
 import com.planmate.common.security.TripAccessChecker;
+import com.planmate.trip.dto.TripBasicInfo;
+import com.planmate.trip.service.TripService;
 
 /**
  * BUD-03-01·03·04, BUD-04-02 경비 합계 계산 확인 (DB 없이 계산만).
@@ -41,8 +45,9 @@ class BudgetSummaryServiceTest {
 	private final BudgetItemRepository repository = mock(BudgetItemRepository.class);
 	private final AccountStatusChecker account = mock(AccountStatusChecker.class); // 가짜 체커
 	private final TripAccessChecker tripAccess = mock(TripAccessChecker.class);
+	private final TripService tripService = mock(TripService.class); // 가짜 B
 	private final BudgetSummaryService service =
-			new BudgetSummaryService(repository, mock(ExchangeRateService.class), account, tripAccess);
+			new BudgetSummaryService(repository, mock(ExchangeRateService.class), account, tripAccess, tripService);
 
 	private static final Map<String, BigDecimal> JPY_910 = Map.of("JPY", new BigDecimal("9.1"));
 
@@ -177,7 +182,9 @@ class BudgetSummaryServiceTest {
 				item(Scope.PERSONAL, "택시", null, "1000", "KRW", 1),
 				item(Scope.PERSONAL, "유심", null, "300", "KRW", 2)));
 
-		BudgetSummaryResponse r = service.getSummary(1L, 4);
+		when(tripService.findBasicInfo(1L)).thenReturn(Optional.of(
+				new TripBasicInfo(4, LocalDate.of(2026, 11, 20), LocalDate.of(2026, 11, 23), "JP")));
+		BudgetSummaryResponse r = service.getSummary(1L);
 
 		verify(tripAccess).requireParticipant(1L, 2L);
 		assertEquals(300L, r.myShare().krwTotal()); // 회원 2의 개인 경비만
@@ -188,7 +195,7 @@ class BudgetSummaryServiceTest {
 		when(account.requireLoginMemberId()).thenReturn(1L);
 		doThrow(new BusinessException(ErrorCode.RESOURCE_NOT_ACCESSIBLE)).when(tripAccess).requireParticipant(1L, 1L);
 
-		BusinessException e = assertThrows(BusinessException.class, () -> service.getSummary(1L, 4));
+		BusinessException e = assertThrows(BusinessException.class, () -> service.getSummary(1L));
 
 		assertEquals(ErrorCode.RESOURCE_NOT_ACCESSIBLE, e.getErrorCode());
 		verify(repository, never()).findByTripIdOrderByItemIdAsc(1L);

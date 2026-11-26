@@ -25,6 +25,7 @@ import org.springframework.test.util.ReflectionTestUtils;
 
 import com.planmate.budget.dto.BudgetItemRequest;
 import com.planmate.budget.dto.BudgetItemResponse;
+import com.planmate.budget.dto.BudgetListResponse;
 import com.planmate.budget.dto.ExchangeRateResponse;
 import com.planmate.budget.entity.BudgetItem;
 import com.planmate.budget.entity.BudgetItem.AmountSource;
@@ -36,6 +37,9 @@ import com.planmate.common.exception.BusinessException;
 import com.planmate.common.exception.ErrorCode;
 import com.planmate.common.security.AccountStatusChecker;
 import com.planmate.common.security.TripAccessChecker;
+import com.planmate.participant.entity.TripMember;
+import com.planmate.trip.dto.TripBasicInfo;
+import com.planmate.trip.service.TripService;
 
 /**
  * BUD-01-02 경비 항목 추가 서버 검사 확인. DB와 환율은 가짜(Mock)로 둔다.
@@ -48,6 +52,7 @@ class BudgetServiceTest {
 
 	private BudgetItemRepository repository;
 	private TripAccessChecker tripAccess;
+	private TripService tripService;
 	private BudgetService service;
 
 	@BeforeEach
@@ -66,7 +71,11 @@ class BudgetServiceTest {
 		AccountStatusChecker account = mock(AccountStatusChecker.class);
 		when(account.requireLoginMemberId()).thenReturn(ME);
 		tripAccess = mock(TripAccessChecker.class);
-		service = new BudgetService(repository, rates, account, tripAccess);
+		// 가짜 B: 도쿄 3박 4일(11/20~11/23), 여행 인원 4명
+		tripService = mock(TripService.class);
+		when(tripService.findBasicInfo(TRIP)).thenReturn(Optional.of(
+				new TripBasicInfo(4, LocalDate.of(2026, 11, 20), LocalDate.of(2026, 11, 23), "JP")));
+		service = new BudgetService(repository, rates, account, tripAccess, tripService);
 	}
 
 	// 나를 조회 참여자로: requireEditor가 넘겨받은 기능별 문구로 거부한다 (진짜 TripAccessChecker와 같은 동작)
@@ -88,7 +97,7 @@ class BudgetServiceTest {
 	}
 
 	private BudgetItemResponse add(BudgetItemRequest req) {
-		return service.addBudgetItem(TRIP, 4, req);
+		return service.addBudgetItem(TRIP, req);
 	}
 
 	private static void assertError(ErrorCode expected, Executable action) {
@@ -181,14 +190,14 @@ class BudgetServiceTest {
 	void 조회_참여자는_공통_경비를_추가할_수_없다() {
 		asViewer();
 		assertError(ErrorCode.BUDGET_COMMON_EDIT_FORBIDDEN,
-				() -> service.addBudgetItem(TRIP, 4, common("점심", "1000", "JPY")));
+				() -> service.addBudgetItem(TRIP, common("점심", "1000", "JPY")));
 	}
 
 	@Test
 	void 조회_참여자는_개인_경비도_추가할_수_없다_공통_문구() {
 		asViewer();
 		assertError(ErrorCode.EDIT_PERMISSION_CHANGED,
-				() -> service.addBudgetItem(TRIP, 4, personal("택시", "1000", "JPY")));
+				() -> service.addBudgetItem(TRIP, personal("택시", "1000", "JPY")));
 	}
 
 	// ---- 화면이 먼저 막는 값 (서버도 다시 검사, 공통 INVALID_INPUT) ----
@@ -537,7 +546,7 @@ class BudgetServiceTest {
 	void 목록은_참여자_검사를_통과해야_보인다() {
 		when(repository.findByTripIdOrderByItemIdAsc(TRIP)).thenReturn(List.of());
 
-		service.getBudgetItems(TRIP);
+		service.getBudgetList(TRIP);
 
 		verify(tripAccess).requireParticipant(TRIP, ME);
 	}
@@ -548,7 +557,7 @@ class BudgetServiceTest {
 		doThrow(new BusinessException(ErrorCode.RESOURCE_NOT_ACCESSIBLE)).when(tripAccess)
 				.requireEditor(eq(TRIP), eq(ME), any(ErrorCode.class));
 
-		assertError(ErrorCode.RESOURCE_NOT_ACCESSIBLE, () -> service.getBudgetItems(TRIP));
+		assertError(ErrorCode.RESOURCE_NOT_ACCESSIBLE, () -> service.getBudgetList(TRIP));
 		assertError(ErrorCode.RESOURCE_NOT_ACCESSIBLE, () -> add(common("점심", "1000", "JPY")));
 		verify(repository, never()).save(any(BudgetItem.class));
 	}
@@ -561,5 +570,45 @@ class BudgetServiceTest {
 		assertError(ErrorCode.BUDGET_EDIT_FORBIDDEN,
 				() -> service.updateBudgetItem(TRIP, 3L, common("점심", "100", "KRW")));
 		verify(repository, never()).findById(anyLong());
+	}
+
+	// ---- B의 여행 기본 정보 (findBasicInfo) ----
+
+	@Test
+	void 목록에_여행_통화_인원_일수_내_역할을_함께_준다() {
+		when(tripAccess.requireParticipant(TRIP, ME)).thenReturn(TripMember.Role.EDITOR);
+		when(repository.findByTripIdOrderByItemIdAsc(TRIP)).thenReturn(List.of());
+
+		BudgetListResponse r = service.getBudgetList(TRIP);
+
+		assertEquals(TRIP, r.tripId());
+		assertEquals("JPY", r.tripCurrency()); // JP → JPY
+		assertEquals(4, r.memberCount());
+		assertEquals(4, r.tripDays()); // 11/20~11/23
+		assertEquals(ME, r.myMemberId());
+		assertEquals(TripMember.Role.EDITOR, r.myRole());
+		assertEquals(List.of(), r.participants()); // TODO(A) 닉네임
+	}
+
+	@Test
+	void 당일치기는_1일() {
+		assertEquals(1, BudgetService.tripDays(new TripBasicInfo(2, LocalDate.of(2026, 12, 1), LocalDate.of(2026, 12, 1), "KR")));
+	}
+
+	@Test
+	void 예산_기준_계산의_여행_인원은_B의_여행_정보에서_읽는다() {
+		when(tripService.findBasicInfo(TRIP)).thenReturn(Optional.of(
+				new TripBasicInfo(3, LocalDate.of(2026, 11, 20), LocalDate.of(2026, 11, 21), "JP")));
+
+		BudgetItemResponse r = add(rule("1000", "JPY", true, null, null));
+
+		assertEquals(0, new BigDecimal("3000").compareTo(r.amount())); // 1000 x 3명
+	}
+
+	@Test
+	void 그사이_여행이_지워졌으면_볼_수_없는_내용() {
+		when(tripService.findBasicInfo(TRIP)).thenReturn(Optional.empty());
+
+		assertError(ErrorCode.RESOURCE_NOT_ACCESSIBLE, () -> service.getBudgetList(TRIP));
 	}
 }
