@@ -36,7 +36,8 @@ const MOCK_TRIP = {
   ],
 }
 
-let mockItems: BudgetItem[] = [
+// BUD-02-03 근거 칸(calcNote·estimateBasis)은 직접 입력·교통비 항목에선 비어 있음 (출처는 C 데이터, TODO)
+let mockItems: BudgetItem[] = ([
   { itemId: 1, scope: 'COMMON', category: 'TRANSPORT', name: '1일차 교통비', calcType: 'PER_PERSON', amount: 400, currency: 'JPY', amountSource: 'ROUTE_FARE', memo: null, createdBy: 1 },
   { itemId: 2, scope: 'COMMON', category: 'LODGING', name: '숙소', calcType: 'TOTAL', amount: 40000, currency: 'JPY', amountSource: 'MANUAL', memo: '3박, 조식 포함', createdBy: 1 },
   { itemId: 3, scope: 'COMMON', category: 'FOOD', name: '저녁 식사', calcType: 'PER_PERSON', amount: 30000, currency: 'KRW', amountSource: 'MANUAL', memo: null, createdBy: 2 },
@@ -50,7 +51,11 @@ let mockItems: BudgetItem[] = [
   { itemId: 11, scope: 'PERSONAL', category: 'ETC', name: '엽서', calcType: null, amount: 600, currency: 'JPY', amountSource: 'MANUAL', memo: null, createdBy: 3 },
   { itemId: 12, scope: 'PERSONAL', category: 'TRANSPORT', name: '교통카드 충전', calcType: null, amount: 7400, currency: 'JPY', amountSource: 'MANUAL', memo: null, createdBy: 3 },
   { itemId: 13, scope: 'PERSONAL', category: 'SIGHTSEEING', name: '공연 티켓', calcType: null, amount: 20000, currency: 'KRW', amountSource: 'MANUAL', memo: null, createdBy: 3 },
-]
+] satisfies Omit<BudgetItem, 'calcNote' | 'estimateBasis'>[]).map((item) => ({
+  ...item,
+  calcNote: null,
+  estimateBasis: null,
+}))
 
 // ---- BUD-04 환율 ----
 // 엔화는 와이어프레임 숫자 100엔 = 910원, 달러·유로는 2026-11-25 한국수출입은행 실제 발표값
@@ -201,6 +206,8 @@ export async function mockAddBudgetItem(_tripId: number, request: BudgetItemRequ
     itemId: Math.max(0, ...mockItems.map((i) => i.itemId)) + 1,
     ...values,
     amountSource: 'MANUAL',
+    calcNote: null,
+    estimateBasis: null,
     createdBy: myMemberId,
   }
   mockItems = [...mockItems, item]
@@ -237,4 +244,14 @@ export async function mockDeleteBudgetItem(_tripId: number, itemId: number): Pro
   await wait(600)
   findEditable(itemId)
   mockItems = mockItems.filter((i) => i.itemId !== itemId)
+}
+
+// BUD-02-03 펼친 칸 메모 저장 (공통 경비만, 비우면 삭제 — 서버가 할 앞뒤 공백 제거 흉내)
+export async function mockUpdateBudgetMemo(_tripId: number, itemId: number, memo: string | null): Promise<BudgetItem> {
+  await wait(600)
+  const item = findEditable(itemId)
+  const trimmed = memo?.trim() ?? ''
+  const updated: BudgetItem = { ...item, memo: trimmed === '' ? null : trimmed }
+  mockItems = mockItems.map((i) => (i.itemId === itemId ? updated : i))
+  return updated
 }

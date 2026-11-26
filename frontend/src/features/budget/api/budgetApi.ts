@@ -1,4 +1,4 @@
-// 경비 서버 호출 (BUD-01-01 목록, BUD-01-02 추가, BUD-01-04 수정·삭제, BUD-03 합계, BUD-04 환율)
+// 경비 서버 호출 (BUD-01-01 목록, BUD-01-02 추가, BUD-01-04 수정·삭제, BUD-02-03 메모, BUD-03 합계, BUD-04 환율)
 // 지금은 가짜 데이터(mockData.ts)를 돌려준다. 화면 파일은 이 파일의 함수만 부른다.
 // TODO(D): contracts/budget.yaml과 서버 API가 생기면
 //          1) 아래 타입을 yaml에 맞추고
@@ -11,6 +11,7 @@ import {
   mockGetBudgetSummary,
   mockGetExchangeRate,
   mockUpdateBudgetItem,
+  mockUpdateBudgetMemo,
 } from '../mockData.ts'
 
 // 경비 구분 (BUDGET_ITEM.SCOPE)
@@ -35,6 +36,8 @@ export interface BudgetItem {
   amount: number | null // 가격 확인 전이면 비움(0원과 다름)
   currency: string // 통화 코드 3자리 (JPY, KRW ...)
   amountSource: AmountSource
+  calcNote: string | null // BUD-02-03 금액 계산 설명
+  estimateBasis: string | null // BUD-02-03 자동 계산 기준값 (예산 기준 계산 항목)
   memo: string | null // 공통 경비만
   createdBy: number | null // 개인 경비 주인
 }
@@ -137,6 +140,11 @@ export function updateBudgetItem(tripId: number, itemId: number, request: Budget
 // BUD-01-04 경비 항목 삭제
 export function deleteBudgetItem(tripId: number, itemId: number): Promise<void> {
   return mockDeleteBudgetItem(tripId, itemId)
+}
+
+// BUD-02-03 펼친 칸 메모 저장 (공통 경비만, null이면 삭제)
+export function updateBudgetMemo(tripId: number, itemId: number, memo: string | null): Promise<BudgetItem> {
+  return mockUpdateBudgetMemo(tripId, itemId, memo)
 }
 
 // BUD-04-03 환율 위젯: 여행 도시 통화의 오늘 환율 (모든 여행이 같은 오늘 환율을 씀)

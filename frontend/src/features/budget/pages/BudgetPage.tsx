@@ -142,6 +142,7 @@ export default function BudgetPage() {
                 toast.close()
                 setDeleteTarget(item)
               }}
+              onChanged={refresh}
             />
           </>
         )}
