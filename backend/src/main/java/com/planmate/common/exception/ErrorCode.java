@@ -55,6 +55,12 @@ public enum ErrorCode {
     // ===== D 파트 (community·budget) =====
     // PUB-04-01 공개 상세: 비공개·관리자 숨김·원래 여행 휴지통·없는 게시물
     PUBLIC_POST_NOT_VISIBLE(HttpStatus.NOT_FOUND, "볼 수 없는 게시물이에요."),
+    // PUB-05-01 좋아요: 이용 제한 회원
+    LIKE_RESTRICTED(HttpStatus.FORBIDDEN, "이용 제한 중에는 좋아요를 누를 수 없어요."),
+    // PUB-05-02 좋아요 취소·PUB-06-01 북마크: 이용 제한 회원 (공통 COMMUNITY_RESTRICTED와 문구가 달라 따로 둠)
+    COMMUNITY_FEATURE_RESTRICTED(HttpStatus.FORBIDDEN, "이용 제한 중에는 커뮤니티 기능을 쓸 수 없어요."),
+    // PUB-06-01 북마크 회원당 200개
+    BOOKMARK_LIMIT_EXCEEDED(HttpStatus.CONFLICT, "북마크는 최대 200개까지 담을 수 있어요."),
 
     ;
 
