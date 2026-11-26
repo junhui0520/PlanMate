@@ -13,6 +13,7 @@
 import { createBrowserRouter, Navigate } from 'react-router';
 import { RouterProvider } from 'react-router/dom';
 import CommunityListPage from '../features/community/pages/CommunityListPage';
+import PostDetailPage from '../features/community/pages/PostDetailPage';
 import { EmptyState } from '../shared/components/EmptyState';
 import { AdminLayout } from './layouts/AdminLayout';
 import { MainLayout } from './layouts/MainLayout';
@@ -49,7 +50,7 @@ const router = createBrowserRouter([
       { path: 'trips/:tripId/budget', element: <RoutePlaceholder screen="D-11" title="경비 탭" pageFile="budget/pages/BudgetPage.tsx" part="D" /> },
       { path: 'trips/:tripId/share', element: <RoutePlaceholder screen="D-08" title="공개 미리보기" pageFile="community/pages/PostCreatePage.tsx" part="D" /> },
       { path: 'community', element: <CommunityListPage /> },
-      { path: 'community/:postId', element: <RoutePlaceholder screen="D-02·03·14" title="공개 여행 상세" pageFile="community/pages/PostDetailPage.tsx" part="D" /> },
+      { path: 'community/:postId', element: <PostDetailPage /> },
       {
         path: 'mypage',
         handle: { sideMenu: 'mypage' } satisfies MainLayoutHandle,

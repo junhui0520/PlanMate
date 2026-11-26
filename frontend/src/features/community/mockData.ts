@@ -6,8 +6,22 @@
 //   ?mock=more-error                (첫 10개는 오고, 다음 10개 불러오기만 실패)
 //   (검색 조건 sort·q·cityId·days도 주소에 남으니 그 뒤에 &mock=... 로 붙여도 됨)
 // 서버가 할 일(공개 게시물만, 정렬, 마지막 게시물 기준 이어 받기)을 이 파일이 흉내 낸다.
-import type { PageResponse } from '../../shared/api/client'
-import { POST_PAGE_SIZE, type CityOption, type PostListItem, type PostListQuery } from './api/communityApi.ts'
+//
+// 상세(/community/:postId) 상태 바꿔 보기: 주소 끝에
+//   ?mock=loading | error | hidden  (hidden = 볼 수 없는 게시물)
+//   ?viewer=guest | member | liked | mine | restricted   (보는 사람, 기본 guest = 비회원)
+//   목록에 없는 번호(예: /community/1)도 볼 수 없는 게시물
+import { ApiError, type PageResponse } from '../../shared/api/client'
+import {
+  POST_NOT_VISIBLE,
+  POST_PAGE_SIZE,
+  type CityOption,
+  type PostDetail,
+  type PostListItem,
+  type PostListQuery,
+  type PostViewer,
+  type PublicDay,
+} from './api/communityApi.ts'
 
 interface MockPost extends PostListItem {
   cityId: number
@@ -115,4 +129,80 @@ export async function mockGetPublicPosts(query: PostListQuery): Promise<PageResp
 export async function mockGetCityOptions(): Promise<CityOption[]> {
   await wait(200)
   return CITIES.map((c) => ({ cityId: c.cityId, name: c.name })).sort((a, b) => a.name.localeCompare(b.name, 'ko'))
+}
+
+// ---- PUB-04-01 공개 상세 ----
+
+// 와이어프레임 D-02 도쿄 3박 4일 (1일차는 D-02 그대로, 2~4일차는 확인용)
+const D02_SCHEDULE: PublicDay[] = [
+  {
+    dayNo: 1,
+    places: [
+      { order: 1, name: '센소지', category: '관광', startTime: '10:00', endTime: '11:30', stayMinutes: 90, lodging: false, lat: 35.7148, lng: 139.7967,
+        segmentToNext: { mode: 'TRANSIT', durationMinutes: 15, estimated: true, distanceMeters: 3200, transitSummary: '지하철 긴자선 → 도보, 환승 0회', walkSummary: '도보 구간 6분 · 450m' } },
+      { order: 2, name: '카페 A', category: '카페', startTime: '11:45', endTime: '12:30', stayMinutes: 45, lodging: false, lat: 35.7101, lng: 139.8107,
+        segmentToNext: { mode: 'WALK', durationMinutes: 10, estimated: false, distanceMeters: 850, transitSummary: null, walkSummary: null } },
+      { order: 3, name: '스카이트리', category: '전망대', startTime: '12:40', endTime: '14:40', stayMinutes: 120, lodging: false, lat: 35.7101, lng: 139.8107,
+        segmentToNext: { mode: 'TRANSIT', durationMinutes: null, estimated: false, distanceMeters: null, transitSummary: null, walkSummary: null } },
+      { order: 4, name: '우에노 공원', category: '공원', startTime: '15:00', endTime: '16:30', stayMinutes: 90, lodging: false, lat: 35.7156, lng: 139.7745,
+        segmentToNext: { mode: 'TRANSIT', durationMinutes: 25, estimated: true, distanceMeters: 6100, transitSummary: 'JR 야마노테선 → 도보, 환승 0회', walkSummary: '도보 구간 8분 · 600m' } },
+      { order: 5, name: '신주쿠 호텔', category: '숙소', startTime: '17:00', endTime: null, stayMinutes: null, lodging: true, lat: 35.6938, lng: 139.7034, segmentToNext: null },
+    ],
+  },
+  {
+    dayNo: 2,
+    places: [
+      { order: 1, name: '메이지 신궁', category: '관광', startTime: '09:30', endTime: '11:00', stayMinutes: 90, lodging: false, lat: 35.6764, lng: 139.6993,
+        segmentToNext: { mode: 'CAR', durationMinutes: 20, estimated: true, distanceMeters: 5400, transitSummary: null, walkSummary: null } },
+      { order: 2, name: '좌표 없는 골목 식당', category: '식당', startTime: '11:30', endTime: '12:30', stayMinutes: 60, lodging: false, lat: null, lng: null, segmentToNext: null },
+    ],
+  },
+  { dayNo: 3, places: [] }, // 방문이 없는 날
+  {
+    dayNo: 4,
+    places: [
+      { order: 1, name: '츠키지 시장', category: '시장', startTime: '08:00', endTime: '09:30', stayMinutes: 90, lodging: false, lat: 35.6655, lng: 139.7707, segmentToNext: null },
+    ],
+  },
+]
+
+const VIEWERS: Record<string, PostViewer> = {
+  guest: { loggedIn: false, mine: false, liked: false, bookmarked: false, communityWritable: false },
+  member: { loggedIn: true, mine: false, liked: false, bookmarked: false, communityWritable: true },
+  liked: { loggedIn: true, mine: false, liked: true, bookmarked: true, communityWritable: true },
+  mine: { loggedIn: true, mine: true, liked: false, bookmarked: false, communityWritable: true },
+  restricted: { loggedIn: true, mine: false, liked: false, bookmarked: false, communityWritable: false },
+}
+
+function notVisible(): ApiError {
+  return new ApiError(404, POST_NOT_VISIBLE, [], '볼 수 없는 게시물이에요.')
+}
+
+// PUB-04-01 공개 상세 (서버 흉내): 목록에 있는 게시물만, 공개 허용 값만
+export async function mockGetPublicPostDetail(postId: number): Promise<PostDetail> {
+  const mode = mockMode()
+  await wait(mode === 'loading' ? 600_000 : 500)
+  if (mode === 'error') throw new Error('mock error')
+  const post = mockPosts.find((p) => p.postId === postId)
+  if (!post || mode === 'hidden') throw notVisible()
+
+  const viewerKey = new URLSearchParams(window.location.search).get('viewer') ?? 'guest'
+  const viewer = VIEWERS[viewerKey] ?? VIEWERS.guest
+  const isD02 = post.postId === 100
+  return {
+    postId: post.postId,
+    title: post.title,
+    intro: isD02 ? '아이와 함께 걷기 좋은 코스로 짰어요. 오전엔 관광, 오후엔 공원 위주예요.' : null,
+    imageUrl: post.imageUrl,
+    cityName: post.cityName,
+    mapProvider: post.cityName === '부산' || post.cityName === '제주' ? 'KAKAO' : 'GOOGLE',
+    days: post.days,
+    authorNickname: post.authorNickname,
+    likeCount: post.likeCount + (viewer.liked ? 1 : 0),
+    publishedAt: post.publishedAt,
+    updatedAt: post.updatedAt,
+    viewer,
+    // D-02 예시가 아니면 일수만큼 빈 날 (일정 확인은 /community/100에서)
+    schedule: isD02 ? D02_SCHEDULE : Array.from({ length: post.days }, (_, i) => ({ dayNo: i + 1, places: [] })),
+  }
 }
