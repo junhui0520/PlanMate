@@ -5,6 +5,7 @@ import { Input } from '../../../shared/components/Input'
 import { Modal } from '../../../shared/components/Modal'
 import { formatMoney } from '../../../shared/utils/money'
 import { isBlank, replaceControlChars } from '../../../shared/utils/validation'
+import BudgetRuleForm, { type AppliedRule } from './BudgetRuleForm.tsx'
 import {
   addBudgetItem,
   getExchangeRate,
@@ -46,6 +47,7 @@ export default function BudgetItemForm({
   editing,
   tripCurrency,
   memberCount,
+  tripDays,
   onClose,
   onSaved,
   onServerError,
@@ -55,6 +57,7 @@ export default function BudgetItemForm({
   editing?: BudgetItem // BUD-01-04 수정할 항목 (없으면 추가)
   tripCurrency: string
   memberCount: number
+  tripDays: number // BUD-02-01 일수 기본값
   onClose: () => void
   onSaved: () => void
   onServerError: (message: string) => void
@@ -74,6 +77,20 @@ export default function BudgetItemForm({
   const [errors, setErrors] = useState<FieldErrors>({})
   const [saving, setSaving] = useState(false)
   const savingRef = useRef(false) // 같은 요청 다시 보내지 않음
+  // BUD-02-01 [인원 / 일수로 계산]으로 채운 금액. 금액·통화·계산 방식·가격 확인 전을 직접 바꾸면 풀림(직접 입력)
+  const [rule, setRule] = useState<AppliedRule | null>(null)
+  const [ruleOpen, setRuleOpen] = useState(false)
+  const canUseRule = isCommon && !editing // 정한 내용(11/26): 공통 경비 추가 창에서만
+
+  const applyRule = (applied: AppliedRule) => {
+    setRule(applied)
+    setCalcType('TOTAL') // 계산 방식 '전체 금액'
+    setCurrency(applied.currency)
+    setAmountText(formatAmountInput(String(applied.total), applied.currency))
+    setPriceUnknown(false)
+    setErrors((e) => ({ ...e, amount: undefined }))
+    setRuleOpen(false)
+  }
 
   const overLimit = (amount: number, rate: number | null) => rate !== null && amount * rate > MAX_AMOUNT_KRW
 
@@ -102,6 +119,7 @@ export default function BudgetItemForm({
     const before = parseAmountInput(amountText)
     if (value !== null && overLimit(value, perOne) && (before === null || value > before)) return
     setAmountText(formatted)
+    setRule(null)
     setErrors((e) => ({ ...e, amount: undefined }))
   }
 
@@ -109,6 +127,7 @@ export default function BudgetItemForm({
   const onCurrencyChange = (next: string) => {
     setCurrency(next)
     setAmountText(formatAmountInput(amountText, next))
+    setRule(null)
   }
 
   const amount = priceUnknown ? null : parseAmountInput(amountText)
@@ -133,10 +152,12 @@ export default function BudgetItemForm({
         category: category as BudgetCategory,
         name: name.trim(), // 앞뒤 공백 제거
         calcType: isCommon ? calcType : null,
-        amount: amount === null ? null : roundToCurrency(amount, currency),
-        priceUnknown,
+        // BUD-02-01 예산 기준이면 금액은 비워서 보내고 서버가 정해진 산식으로 계산
+        amount: rule || amount === null ? null : roundToCurrency(amount, currency),
+        priceUnknown: rule ? false : priceUnknown,
         currency,
         memo: isCommon && !isBlank(memo) ? memo.trim() : null,
+        budgetRule: rule ? rule.rule : null,
       }
       if (editing) await updateBudgetItem(tripId, editing.itemId, request)
       else await addBudgetItem(tripId, request)
@@ -223,7 +244,10 @@ export default function BudgetItemForm({
                   type="button"
                   aria-pressed={calcType === key}
                   className={calcType === key ? 'budget-choice budget-choice--on' : 'budget-choice'}
-                  onClick={() => setCalcType(key)}
+                  onClick={() => {
+                    setCalcType(key)
+                    if (key !== 'TOTAL') setRule(null) // 예산 기준은 '전체 금액'만
+                  }}
                 >
                   {label}
                 </button>
@@ -233,8 +257,15 @@ export default function BudgetItemForm({
         )}
 
         <div className="budget-form__field">
-          <span className="pm-field__label">금액</span>
-          {/* TODO(D): BUD-02-01 "인원 / 일수로 계산" (D-13) */}
+          <div className="budget-form__label-row">
+            <span className="pm-field__label">금액</span>
+            {/* BUD-02-01 금액 칸 위의 [인원 / 일수로 계산] (피그마 D-12 오른쪽 밑줄 글자) */}
+            {canUseRule && (
+              <Button variant="text" onClick={() => setRuleOpen(true)}>
+                인원 / 일수로 계산
+              </Button>
+            )}
+          </div>
           <div className="budget-form__amount-row">
             {/* 칸 안 오른쪽에 지금 통화 단위를 보여 줘서 원·엔을 헷갈리지 않게 함 (예: "30,000 엔") */}
             <span className="budget-form__amount-input">
@@ -265,6 +296,8 @@ export default function BudgetItemForm({
             </select>
           </div>
           {perPersonPreview && <p className="pm-field__hint">{perPersonPreview}</p>}
+          {/* BUD-02-01 예산 기준으로 채운 금액이면 계산식을 보여 줌 (근거는 저장 후 펼친 칸에서도 볼 수 있음) */}
+          {rule && <p className="pm-field__hint">예산 기준: {rule.note}</p>}
           {errors.amount && <p className="pm-field__error">{errors.amount}</p>}
           <label className="budget-form__check">
             <input
@@ -272,6 +305,7 @@ export default function BudgetItemForm({
               checked={priceUnknown}
               onChange={(e) => {
                 setPriceUnknown(e.target.checked)
+                setRule(null)
                 setErrors((v) => ({ ...v, amount: undefined }))
               }}
             />
@@ -291,6 +325,17 @@ export default function BudgetItemForm({
           </div>
         )}
       </div>
+
+      {/* BUD-02-01 예산 기준 계산 창 (D-13, 추가 창 위에 뜸) */}
+      {ruleOpen && (
+        <BudgetRuleForm
+          memberCount={memberCount}
+          tripDays={tripDays}
+          initialCurrency={currency}
+          onApply={applyRule}
+          onClose={() => setRuleOpen(false)}
+        />
+      )}
     </Modal>
   )
 }

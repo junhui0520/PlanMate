@@ -49,9 +49,9 @@ const CATEGORY_LABEL = Object.fromEntries(
   CATEGORY_TABS.filter((t) => t.key !== 'ALL').map((t) => [t.key, t.label]),
 ) as Record<BudgetCategory, string>
 
-// 와이어프레임 D-11 배지: 자동으로 들어온 금액이면 출처 표시 (직접 입력은 표시 없음)
+// 와이어프레임 D-11 배지: 교통비로 들어온 금액이면 표시 (직접 입력은 표시 없음)
+// BUD-02-01 '예산 기준'은 목록에 표시하지 않음(기능정의서 11/13 결정) — 근거는 펼친 칸(BUD-02-03)에서 봄
 const SOURCE_BADGE: Partial<Record<AmountSource, string>> = {
-  BUDGET_RULE: '예산 기준',
   ROUTE_FARE: '교통비',
 }
 
@@ -100,6 +100,29 @@ const SOURCE_LABEL: Record<AmountSource, string> = {
 
 const MEMO_MAX = 200 // BUD-02-03 메모 0~200자
 
+// BUD-02-01 자동 계산 기준값(서버가 저장한 값)을 읽기 쉬운 글자로. 예: "기준 금액 30,000원 · 여행 인원 4명 · 일수 3일"
+function describeBasis(basis: string): string {
+  try {
+    const b = JSON.parse(basis) as {
+      baseAmount: number
+      currency: string
+      people: number | null
+      days: number | null
+      times: number | null
+    }
+    return [
+      `기준 금액 ${formatMoney(b.baseAmount, b.currency)}`,
+      b.people !== null ? `여행 인원 ${b.people}명` : null,
+      b.days !== null ? `일수 ${b.days}일` : null,
+      b.times !== null ? `횟수 ${b.times}회` : null,
+    ]
+      .filter(Boolean)
+      .join(' · ')
+  } catch {
+    return basis // 모양이 다르면 받은 글자 그대로
+  }
+}
+
 // BUD-02-03 펼친 칸: 금액 입력 방식·근거·메모(소유자·편집 참여자만 작성) + "실제 예약·결제 가격과 다를 수 있어요."
 function BasisPanel({
   tripId,
@@ -145,7 +168,7 @@ function BasisPanel({
         {item.estimateBasis && (
           <>
             <dt>자동 계산 기준값</dt>
-            <dd>{item.estimateBasis}</dd>
+            <dd>{describeBasis(item.estimateBasis)}</dd>
           </>
         )}
         {!canEdit && item.memo && (

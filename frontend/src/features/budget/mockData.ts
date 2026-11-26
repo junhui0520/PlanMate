@@ -6,6 +6,7 @@
 //   ?mock=rate-error                (환율 위젯만 실패)
 //   ?mock=limit                     (경비 추가 시 200개 초과 안내)
 //   ?mock=deleted                   (경비 수정·삭제 시 "이미 삭제된 경비예요.")
+//   (예산 기준 계산은 공통 경비 추가 창의 [인원 / 일수로 계산]에서)
 //   ?role=EDITOR | VIEWER           (내 역할 바꾸기, 기본 OWNER. VIEWER면 추가 버튼 없음)
 //   ?currency=KRW | USD | EUR       (여행 도시 통화 바꾸기, KRW면 위젯 숨김. 기본 JPY)
 // 추가한 경비는 이 파일의 목록에만 붙는다. 새로고침하면 처음으로 돌아간다.
@@ -20,6 +21,7 @@ import type {
   ExchangeRate,
   TripRole,
 } from './api/budgetApi.ts'
+import { formatMoney } from '../../shared/utils/money'
 import { roundToCurrency } from './utils/money.ts'
 
 // ---- BUD-01-01 경비 목록 (추가할 수 있게 let) ----
@@ -27,6 +29,7 @@ import { roundToCurrency } from './utils/money.ts'
 const MOCK_TRIP = {
   tripCurrency: 'JPY', // 도쿄 여행
   memberCount: 4,
+  tripDays: 4, // 2026.11.20 ~ 11.23 (3박 4일)
   myMemberId: 1,
   participants: [
     { memberId: 1, nickname: '지은' },
@@ -201,17 +204,52 @@ export async function mockAddBudgetItem(_tripId: number, request: BudgetItemRequ
     const count = mockItems.filter((i) => i.scope === 'PERSONAL' && i.createdBy === myMemberId).length
     if (limitMode || count >= MAX_ITEMS) throw new Error('개인 경비는 최대 200개까지 추가할 수 있어요.')
   }
-  const { priceUnknown: _priceUnknown, ...values } = request
+  const { priceUnknown: _priceUnknown, budgetRule, ...values } = request
+  // BUD-02-01 예산 기준이면 서버가 계산하는 것을 흉내: 기준 금액 x 선택한 값들
+  const ruled = budgetRule ? computeRule(budgetRule, request.currency) : null
+  if (budgetRule && budgetRule.baseAmount === null) throw new Error('기준 금액을 입력해 주세요.')
   const item: BudgetItem = {
     itemId: Math.max(0, ...mockItems.map((i) => i.itemId)) + 1,
     ...values,
-    amountSource: 'MANUAL',
-    calcNote: null,
-    estimateBasis: null,
+    amount: ruled ? ruled.total : values.amount,
+    amountSource: ruled ? 'BUDGET_RULE' : 'MANUAL',
+    calcNote: ruled ? ruled.calcNote : null,
+    estimateBasis: ruled ? ruled.estimateBasis : null,
     createdBy: myMemberId,
   }
   mockItems = [...mockItems, item]
   return item
+}
+
+// BUD-02-01 서버 계산 흉내 (서버 BudgetService.applyBudgetRule과 같은 문장·기준값 모양)
+function computeRule(rule: NonNullable<BudgetItemRequest['budgetRule']>, currency: string) {
+  const base = rule.baseAmount ?? 0
+  let total = base
+  let note = formatMoney(base, currency)
+  if (rule.multiplyPeople) {
+    total *= MOCK_TRIP.memberCount
+    note += ` × ${MOCK_TRIP.memberCount}명`
+  }
+  if (rule.days !== null) {
+    total *= rule.days
+    note += ` × ${rule.days}일`
+  }
+  if (rule.times !== null) {
+    total *= rule.times
+    note += ` × ${rule.times}회`
+  }
+  total = roundToCurrency(total, currency)
+  return {
+    total,
+    calcNote: `${note} = ${formatMoney(total, currency)}`,
+    estimateBasis: JSON.stringify({
+      baseAmount: base,
+      currency,
+      people: rule.multiplyPeople ? MOCK_TRIP.memberCount : null,
+      days: rule.days,
+      times: rule.times,
+    }),
+  }
 }
 
 // BUD-01-04 서버가 할 검사 흉내: 없으면 "이미 삭제된 경비예요.", 권한 없으면 "이 경비를 고칠 권한이 없어요."
@@ -233,7 +271,7 @@ export async function mockUpdateBudgetItem(
 ): Promise<BudgetItem> {
   await wait(600)
   const item = findEditable(itemId)
-  const { priceUnknown: _priceUnknown, scope: _scope, ...values } = request
+  const { priceUnknown: _priceUnknown, scope: _scope, budgetRule: _budgetRule, ...values } = request
   const updated: BudgetItem = { ...item, ...values }
   mockItems = mockItems.map((i) => (i.itemId === itemId ? updated : i))
   return updated

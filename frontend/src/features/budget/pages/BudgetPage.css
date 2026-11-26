@@ -581,3 +581,37 @@
   color: var(--color-text-sub);
   font-size: var(--font-size-xs);
 }
+
+/* BUD-02-01 금액 라벨 줄 오른쪽 [인원 / 일수로 계산] */
+.budget-form__label-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+/* BUD-02-01 예산 기준 계산 창 (D-13): 곱할 값 한 줄에 하나씩 */
+.budget-rule__row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: 40px;
+}
+
+.budget-rule__check {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 120px;
+}
+
+.budget-rule__count {
+  width: 72px !important;
+}
+
+.budget-rule__preview {
+  margin: 0;
+  padding: var(--space-4);
+  border-radius: var(--radius-lg);
+  background: var(--color-bg-sub);
+  font-weight: var(--font-weight-bold);
+}

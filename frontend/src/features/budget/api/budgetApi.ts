@@ -52,6 +52,15 @@ export interface BudgetItemRequest {
   priceUnknown: boolean // '가격 확인 전' 선택 (금액 빈칸과 구분)
   currency: string
   memo: string | null // 공통만, 0~200자
+  budgetRule: BudgetRule | null // BUD-02-01 예산 기준 계산으로 넣을 때만 (금액은 서버가 계산, amount는 null)
+}
+
+// BUD-02-01 예산 기준: 기준 금액 x 선택한 값들 (곱할 값이 없으면 기준 금액 그대로)
+export interface BudgetRule {
+  baseAmount: number | null
+  multiplyPeople: boolean // x 여행 인원 (자동)
+  days: number | null // x 일수 1~7 (안 곱하면 null)
+  times: number | null // x 횟수 1~99 (안 곱하면 null)
 }
 
 export interface BudgetParticipant {
@@ -63,6 +72,7 @@ export interface BudgetListResponse {
   tripId: number
   tripCurrency: string // 여행 도시 통화 (B의 여행 정보, KRW면 국내 여행)
   memberCount: number // 여행 인원 (1인당 금액 표시에 씀)
+  tripDays: number // 여행 일수 (B의 여행 정보, BUD-02-01 일수 기본값)
   myMemberId: number
   myRole: TripRole
   participants: BudgetParticipant[]

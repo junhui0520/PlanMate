@@ -163,6 +163,7 @@ export default function BudgetPage() {
           editing={form.item}
           tripCurrency={state.data.tripCurrency}
           memberCount={state.data.memberCount}
+          tripDays={state.data.tripDays}
           onClose={() => setForm(null)}
           onSaved={onSaved}
           // 개수 초과·권한 없음·이미 삭제됨: 화면 아래 가운데 상태 창 (닫을 때까지 남음)
