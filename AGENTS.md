@@ -121,6 +121,9 @@ E 파트 기능은 A 파트 팀원이 구현한다. 그래서 담당은 A·B·C�
 
 ### 권한
 - 로그인·계정 상태: `AccountStatusChecker`, 여행 자료: `TripAccessChecker`, 관리자: `AdminAccessChecker` (모두 common/security, A 담당). 각자 권한 검사 코드를 따로 만들지 않는다.
+  - 주소 규칙: 모든 API는 `/api`로 시작한다. `/api/auth/**` 공개, `/api/admin/**` 관리자, 나머지 `/api/**` 로그인 필요. 로그인 없이 열어야 하는 API는 A에게 요청한다(SecurityConfig는 A 담당).
+  - 서비스에서 로그인 회원은 `accountStatusChecker.requireLoginMemberId()`로 얻는다. 여행 자료는 저장 직전에 `tripAccessChecker.requireParticipant / requireEditor / requireOwner(…, ErrorCode)`를 부른다. 기능별 거부 문구(예: "소유자만 초대할 수 있어요.")는 자기 ErrorCode 구역에 두고 넘긴다.
+  - 여행 상태(TRIP.STATUS)는 B가 구현한 `TripStatusReader`로 읽는다. 휴지통 여행의 소유자 전용 동작은 `requireOwnerOfTrashed`를 쓴다.
 - 여행 역할은 TRIP_MEMBER.ROLE = OWNER / EDITOR / VIEWER. 저장 직전에 현재 역할을 다시 확인한다.
 - 휴지통(TRIP.STATUS = TRASHED) 여행은 참여자 접근을 막는다.
 - 이용 제한 회원은 커뮤니티(PUB) 쓰기만 막힌다. 여행·일정·AI·경비·보관함·문의는 쓸 수 있다.
@@ -141,7 +144,7 @@ E 파트 기능은 A 파트 팀원이 구현한다. 그래서 담당은 A·B·C�
 
 ## 7. 프론트 규칙
 
-- 서버 호출은 `shared/api/client.ts`를 거친다(서버 주소·로그인 쿠키·공통 에러 처리). 각 기능은 `api/<기능>Api.ts`에 함수로 둔다.
+- 서버 호출은 `shared/api/client.ts`를 거친다(서버 주소·로그인 쿠키·공통 에러 처리). 각 기능은 `api/<기능>Api.ts`에 함수로 둔다. POST·PUT·PATCH·DELETE의 CSRF 헤더(`X-XSRF-TOKEN`)는 client.ts가 자동으로 붙인다.
 - `VITE_` 환경변수는 `frontend/.env.local`에 둔다(Vite는 레포 맨 위 .env를 읽지 않는다).
 - 실시간 연결은 `shared/api/websocket.ts`를 거친다.
 - 공통 부품(Button, Input, Modal, ConfirmDialog, Toast, Loading, EmptyState)은 `shared/components` 것을 쓴다. 기능 폴더에 같은 부품을 또 만들지 않는다. 상태 창은 `useToast()`(`shared/hooks/useToast.ts`)로 띄운다.

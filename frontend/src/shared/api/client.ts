@@ -110,10 +110,72 @@ function fail(error: ApiError): never {
   throw error;
 }
 
-async function request<T>(method: HttpMethod, path: string, options: RequestOptions = {}): Promise<T> {
+/*
+ * CSRF (ACC-07): POST·PUT·PATCH·DELETE에 XSRF-TOKEN 쿠키 값을 X-XSRF-TOKEN 헤더로 붙인다. GET에는 붙이지 않는다.
+ * 쿠키가 없으면(첫 화면에서 바로 로그인, 로그인·로그아웃 뒤 쿠키가 지워진 경우) GET /api/auth/csrf로 한 번 발급받는다.
+ * TODO(ACC-02): pjh/login에서 GET /api/auth/csrf(204)를 AuthController·contracts/auth.yaml에 추가. 그 전에도 /api/auth/** 응답(404 포함)에 XSRF-TOKEN 쿠키가 발급됨을 확인함(2026-11-26)
+ * 화면과 API 도메인이 다르면 document.cookie로 읽을 수 없음 — 배포 구조 확정 시 /api/auth/csrf 응답 본문으로 토큰 받는 방식 검토 (AGENTS_A §2)
+ */
+const CSRF_COOKIE = 'XSRF-TOKEN';
+const CSRF_HEADER = 'X-XSRF-TOKEN';
+const CSRF_REJECTED_CODE = 'CSRF_TOKEN_INVALID';
+const CSRF_METHODS: ReadonlySet<HttpMethod> = new Set<HttpMethod>(['POST', 'PUT', 'PATCH', 'DELETE']);
+
+// 진행 중인 토큰 발급 요청 (동시에 여러 요청이 와도 한 번만 보낸다)
+let csrfFetching: Promise<void> | null = null;
+
+function readCsrfCookie(): string | null {
+  for (const part of document.cookie.split(';')) {
+    const [name, ...rest] = part.trim().split('=');
+    if (name !== CSRF_COOKIE) continue;
+    const raw = rest.join('=');
+    if (!raw) return null;
+    try {
+      return decodeURIComponent(raw);
+    } catch {
+      return raw;
+    }
+  }
+  return null;
+}
+
+// 토큰 쿠키 발급 요청. 응답 상태·본문은 보지 않고, 실패해도 ApiError를 던지지 않는다
+function fetchCsrfCookie(): Promise<void> {
+  if (!csrfFetching) {
+    csrfFetching = fetch(buildUrl('/api/auth/csrf'), { method: 'GET', credentials: 'include' })
+      .then(
+        () => undefined,
+        () => undefined,
+      )
+      .finally(() => {
+        csrfFetching = null;
+      });
+  }
+  return csrfFetching;
+}
+
+// 붙일 토큰. refresh면 쿠키가 있어도 다시 발급받고 읽는다
+async function getCsrfToken(refresh: boolean): Promise<string | null> {
+  const token = refresh ? null : readCsrfCookie();
+  if (token) return token;
+  await fetchCsrfCookie();
+  return readCsrfCookie();
+}
+
+interface RawResponse {
+  res: Response;
+  parsed: unknown; // JSON 본문, 없거나 JSON이 아니면 undefined
+}
+
+async function send(
+  method: HttpMethod,
+  path: string,
+  options: RequestOptions,
+  csrfToken: string | null,
+): Promise<RawResponse> {
   const { query, body, signal } = options;
   const headers: Record<string, string> = { Accept: 'application/json' };
-  // TODO(ACC-07): CSRF 방식 확정 후 여기서 헤더 추가
+  if (csrfToken) headers[CSRF_HEADER] = csrfToken;
   const init: RequestInit = { method, headers, credentials: 'include', signal };
   if (body !== undefined) {
     headers['Content-Type'] = 'application/json';
@@ -131,16 +193,38 @@ async function request<T>(method: HttpMethod, path: string, options: RequestOpti
     return fail(new ApiError(0, null, [], ''));
   }
 
-  // 성공 204는 본문 없음
-  if (res.status === 204 && res.ok) return null as T;
-
-  // 본문이 없거나 JSON이 아님 (예: 지금 Spring Security 기본 401은 본문 없음)
   let parsed: unknown;
   try {
     parsed = text ? JSON.parse(text) : undefined;
   } catch {
     parsed = undefined;
   }
+  return { res, parsed };
+}
+
+function isCsrfRejected({ res, parsed }: RawResponse): boolean {
+  return (
+    res.status === 403 &&
+    isApiResponse(parsed) &&
+    isErrorData(parsed.data) &&
+    parsed.data.code === CSRF_REJECTED_CODE
+  );
+}
+
+async function request<T>(method: HttpMethod, path: string, options: RequestOptions = {}): Promise<T> {
+  const needsCsrf = CSRF_METHODS.has(method);
+  let raw = await send(method, path, options, needsCsrf ? await getCsrfToken(false) : null);
+  if (needsCsrf && isCsrfRejected(raw)) {
+    // 토큰을 다시 받아 한 번만 재시도한다.
+    // CSRF 거부는 서버가 처리하기 전에 막은 것이라 재시도해도 두 번 처리되지 않는다
+    raw = await send(method, path, options, await getCsrfToken(true));
+  }
+  const { res, parsed } = raw;
+
+  // 성공 204는 본문 없음
+  if (res.status === 204 && res.ok) return null as T;
+
+  // 본문이 없거나 JSON이 아님
   if (!isApiResponse(parsed)) {
     return fail(new ApiError(res.status, null, [], ''));
   }
