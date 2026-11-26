@@ -49,6 +49,8 @@ public enum ErrorCode {
     // BUD-01-04 경비 항목 수정·삭제
     BUDGET_ITEM_NOT_FOUND(HttpStatus.NOT_FOUND, "이미 삭제된 경비예요."),
     BUDGET_EDIT_FORBIDDEN(HttpStatus.FORBIDDEN, "이 경비를 고칠 권한이 없어요."),
+    // BUD-02-01 예산 기준 계산
+    BUDGET_BASE_AMOUNT_REQUIRED(HttpStatus.BAD_REQUEST, "기준 금액을 입력해 주세요."),
 
     ;
 
