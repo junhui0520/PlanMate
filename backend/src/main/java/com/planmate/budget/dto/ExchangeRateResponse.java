@@ -5,6 +5,7 @@ import java.math.RoundingMode;
 import java.time.LocalDate;
 
 import com.planmate.budget.client.KoreaEximClient.KoreaEximRate;
+import com.planmate.budget.entity.ExchangeRate;
 
 /**
  * BUD-04 환율 정보.
@@ -21,10 +22,18 @@ public record ExchangeRateResponse(
 	private static final int RATE_PER_ONE_SCALE = 6;
 
 	public static ExchangeRateResponse of(KoreaEximRate rate, LocalDate baseDate) {
-		BigDecimal perOne = rate.rate()
-				.divide(BigDecimal.valueOf(rate.unit()), RATE_PER_ONE_SCALE, RoundingMode.HALF_UP)
+		return of(rate.currency(), baseDate, rate.rate(), rate.unit());
+	}
+
+	public static ExchangeRateResponse from(ExchangeRate entity) {
+		return of(entity.getCurrency().trim(), entity.getBaseDate(), entity.getRate(), entity.getUnit());
+	}
+
+	private static ExchangeRateResponse of(String currency, LocalDate baseDate, BigDecimal rate, int unit) {
+		BigDecimal perOne = rate
+				.divide(BigDecimal.valueOf(unit), RATE_PER_ONE_SCALE, RoundingMode.HALF_UP)
 				.stripTrailingZeros();
-		return new ExchangeRateResponse(rate.currency(), baseDate, rate.rate(), rate.unit(), perOne);
+		return new ExchangeRateResponse(currency, baseDate, rate, unit, perOne);
 	}
 
 }

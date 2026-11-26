@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
+import static org.mockito.Mockito.mock;
 
 import java.io.IOException;
 import java.math.BigDecimal;
@@ -11,6 +12,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.DayOfWeek;
 import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.List;
 
 import org.junit.jupiter.api.Test;
@@ -18,6 +20,7 @@ import org.junit.jupiter.api.Test;
 import com.planmate.budget.client.KoreaEximClient.KoreaEximRate;
 import com.planmate.budget.client.KoreaEximClient.RawRate;
 import com.planmate.budget.dto.ExchangeRateResponse;
+import com.planmate.budget.repository.ExchangeRateRepository;
 import com.planmate.budget.service.ExchangeRateService;
 
 /**
@@ -57,9 +60,9 @@ class KoreaEximClientTest {
 
 	@Test
 	void 실제_환율을_받아_엔화와_달러를_보여준다() {
-		ExchangeRateService service = new ExchangeRateService(new KoreaEximClient(readApiKey()));
+		ExchangeRateService service = serviceWithoutDb();
 
-		List<ExchangeRateResponse> rates = service.fetchLatestRates();
+		List<ExchangeRateResponse> rates = service.fetchLatestRates(LocalDate.now(ZoneId.of("Asia/Seoul")));
 
 		assertFalse(rates.isEmpty());
 		printRate(rates, "JPY");
@@ -70,7 +73,7 @@ class KoreaEximClientTest {
 
 	@Test
 	void 주말이면_직전_평일_환율을_찾는다() {
-		ExchangeRateService service = new ExchangeRateService(new KoreaEximClient(readApiKey()));
+		ExchangeRateService service = serviceWithoutDb();
 		LocalDate sunday = LocalDate.of(2026, 11, 22);
 
 		List<ExchangeRateResponse> rates = service.fetchLatestRates(sunday);
@@ -82,6 +85,11 @@ class KoreaEximClientTest {
 	}
 
 	// ---- 도움 함수 ----
+
+	// 받아 오기만 시험하므로 저장소는 가짜(Mock)로 둔다 (DB를 건드리지 않음)
+	private static ExchangeRateService serviceWithoutDb() {
+		return new ExchangeRateService(new KoreaEximClient(readApiKey()), mock(ExchangeRateRepository.class));
+	}
 
 	private static void printRate(List<ExchangeRateResponse> rates, String currency) {
 		ExchangeRateResponse r = find(rates, currency);
