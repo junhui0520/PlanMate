@@ -5,6 +5,7 @@
 //   ?mock=loading | empty | error   (경비 화면 전체)
 //   ?mock=rate-error                (환율 위젯만 실패)
 //   ?mock=limit                     (경비 추가 시 200개 초과 안내)
+//   ?mock=deleted                   (경비 수정·삭제 시 "이미 삭제된 경비예요.")
 //   ?role=EDITOR | VIEWER           (내 역할 바꾸기, 기본 OWNER. VIEWER면 추가 버튼 없음)
 //   ?currency=KRW | USD | EUR       (여행 도시 통화 바꾸기, KRW면 위젯 숨김. 기본 JPY)
 // 추가한 경비는 이 파일의 목록에만 붙는다. 새로고침하면 처음으로 돌아간다.
@@ -195,12 +196,45 @@ export async function mockAddBudgetItem(_tripId: number, request: BudgetItemRequ
     const count = mockItems.filter((i) => i.scope === 'PERSONAL' && i.createdBy === myMemberId).length
     if (limitMode || count >= MAX_ITEMS) throw new Error('개인 경비는 최대 200개까지 추가할 수 있어요.')
   }
+  const { priceUnknown: _priceUnknown, ...values } = request
   const item: BudgetItem = {
     itemId: Math.max(0, ...mockItems.map((i) => i.itemId)) + 1,
-    ...request,
+    ...values,
     amountSource: 'MANUAL',
     createdBy: myMemberId,
   }
   mockItems = [...mockItems, item]
   return item
+}
+
+// BUD-01-04 서버가 할 검사 흉내: 없으면 "이미 삭제된 경비예요.", 권한 없으면 "이 경비를 고칠 권한이 없어요."
+function findEditable(itemId: number): BudgetItem {
+  const item = mockItems.find((i) => i.itemId === itemId)
+  if (!item || mockMode() === 'deleted') throw new Error('이미 삭제된 경비예요.')
+  const mine = item.scope === 'PERSONAL' && item.createdBy === MOCK_TRIP.myMemberId
+  if (myRole() === 'VIEWER' || (item.scope === 'PERSONAL' && !mine)) {
+    throw new Error('이 경비를 고칠 권한이 없어요.')
+  }
+  return item
+}
+
+// BUD-01-04 경비 항목 수정 (나중에 저장한 값으로 덮어씀, 금액 입력 방식·만든 사람은 그대로)
+export async function mockUpdateBudgetItem(
+  _tripId: number,
+  itemId: number,
+  request: BudgetItemRequest,
+): Promise<BudgetItem> {
+  await wait(600)
+  const item = findEditable(itemId)
+  const { priceUnknown: _priceUnknown, scope: _scope, ...values } = request
+  const updated: BudgetItem = { ...item, ...values }
+  mockItems = mockItems.map((i) => (i.itemId === itemId ? updated : i))
+  return updated
+}
+
+// BUD-01-04 경비 항목 삭제
+export async function mockDeleteBudgetItem(_tripId: number, itemId: number): Promise<void> {
+  await wait(600)
+  findEditable(itemId)
+  mockItems = mockItems.filter((i) => i.itemId !== itemId)
 }

@@ -1,4 +1,4 @@
-// 경비 서버 호출 (BUD-01-01 목록, BUD-03 합계)
+// 경비 서버 호출 (BUD-01-01 목록, BUD-01-02 추가, BUD-01-04 수정·삭제, BUD-03 합계, BUD-04 환율)
 // 지금은 가짜 데이터(mockData.ts)를 돌려준다. 화면 파일은 이 파일의 함수만 부른다.
 // TODO(D): contracts/budget.yaml과 서버 API가 생기면
 //          1) 아래 타입을 yaml에 맞추고
@@ -6,9 +6,11 @@
 //          3) mockData.ts를 지운다. (화면 파일은 고치지 않아도 됨)
 import {
   mockAddBudgetItem,
+  mockDeleteBudgetItem,
   mockGetBudgetList,
   mockGetBudgetSummary,
   mockGetExchangeRate,
+  mockUpdateBudgetItem,
 } from '../mockData.ts'
 
 // 경비 구분 (BUDGET_ITEM.SCOPE)
@@ -37,13 +39,14 @@ export interface BudgetItem {
   createdBy: number | null // 개인 경비 주인
 }
 
-// BUD-01-02 경비 항목 추가할 때 보내는 값 (만든 사람은 서버가 로그인 정보로 채움)
+// BUD-01-02 추가·BUD-01-04 수정할 때 보내는 값 (contracts/budget.yaml BudgetItemRequest, 만든 사람은 서버가 채움)
 export interface BudgetItemRequest {
-  scope: BudgetScope // 누른 버튼으로 정해짐
+  scope: BudgetScope // 누른 버튼으로 정해짐 (수정에서는 원래 값 그대로)
   category: BudgetCategory
   name: string // 1~50자, 앞뒤 공백 제거
   calcType: CalcType | null // 공통만 필수, 개인은 null
   amount: number | null // 가격 확인 전이면 null
+  priceUnknown: boolean // '가격 확인 전' 선택 (금액 빈칸과 구분)
   currency: string
   memo: string | null // 공통만, 0~200자
 }
@@ -124,6 +127,16 @@ export function getBudgetSummary(tripId: number): Promise<BudgetSummaryResponse>
 // BUD-01-02 경비 항목 추가. 실패하면 Error.message에 서버 안내 문구가 들어 있음
 export function addBudgetItem(tripId: number, request: BudgetItemRequest): Promise<BudgetItem> {
   return mockAddBudgetItem(tripId, request)
+}
+
+// BUD-01-04 경비 항목 수정. 실패하면 Error.message에 서버 안내 문구 ("이미 삭제된 경비예요." 등)
+export function updateBudgetItem(tripId: number, itemId: number, request: BudgetItemRequest): Promise<BudgetItem> {
+  return mockUpdateBudgetItem(tripId, itemId, request)
+}
+
+// BUD-01-04 경비 항목 삭제
+export function deleteBudgetItem(tripId: number, itemId: number): Promise<void> {
+  return mockDeleteBudgetItem(tripId, itemId)
 }
 
 // BUD-04-03 환율 위젯: 여행 도시 통화의 오늘 환율 (모든 여행이 같은 오늘 환율을 씀)

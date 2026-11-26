@@ -1,6 +1,6 @@
-// BUD-01-01 경비 목록: 공통 경비(분류 탭) + 개인 경비(참여자별 카드)
+// BUD-01-01 경비 목록: 공통 경비(분류 탭) + 개인 경비(참여자별 카드), BUD-01-04 수정·삭제 메뉴
 // 모양은 와이어프레임 D-11 (카드 안에 공통 경비·개인 경비)
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type {
   AmountSource,
   BudgetCategory,
@@ -86,18 +86,68 @@ function MemoIcon({ memo }: { memo: string | null }) {
   )
 }
 
+// BUD-01-04 공통 경비 항목 메뉴(점 3개) → [수정] [삭제]. 공통 부품에 없는 작은 메뉴라 경비 안에 둠
+function ItemMenu({ onEdit, onDelete }: { onEdit: () => void; onDelete: () => void }) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLSpanElement>(null)
+
+  // 메뉴 밖을 누르면 닫힘
+  useEffect(() => {
+    if (!open) return
+    const close = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener('mousedown', close)
+    return () => document.removeEventListener('mousedown', close)
+  }, [open])
+
+  const pick = (action: () => void) => {
+    setOpen(false)
+    action()
+  }
+
+  return (
+    <span className="budget-menu" ref={ref}>
+      <button
+        type="button"
+        className="budget-square"
+        aria-label="항목 메뉴"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={() => setOpen((v) => !v)}
+      >
+        ···
+      </button>
+      {open && (
+        <span className="budget-menu__list" role="menu">
+          <button type="button" role="menuitem" onClick={() => pick(onEdit)}>
+            수정
+          </button>
+          <button type="button" role="menuitem" onClick={() => pick(onDelete)}>
+            삭제
+          </button>
+        </span>
+      )}
+    </span>
+  )
+}
+
 function CommonSection({
   items,
   memberCount,
   canEdit,
   commonTotal,
   onAdd,
+  onEdit,
+  onDelete,
 }: {
   items: BudgetItem[]
   memberCount: number
   canEdit: boolean
   commonTotal: BudgetTotal
   onAdd: () => void
+  onEdit: (item: BudgetItem) => void
+  onDelete: (item: BudgetItem) => void
 }) {
   const [tab, setTab] = useState<BudgetCategory | 'ALL'>('ALL')
   const shown = tab === 'ALL' ? items : items.filter((item) => item.category === tab)
@@ -152,12 +202,8 @@ function CommonSection({
                 <CommonAmount item={item} memberCount={memberCount} />
               </span>
               <MemoIcon memo={item.memo} />
-              {/* TODO(D): BUD-01-04 [수정]·[삭제] 메뉴 */}
-              {canEdit && (
-                <button type="button" className="budget-square" aria-label="항목 메뉴">
-                  ···
-                </button>
-              )}
+              {/* BUD-01-04 공통 경비: 항목 메뉴 → [수정] / [삭제] (소유자·편집 참여자만) */}
+              {canEdit && <ItemMenu onEdit={() => onEdit(item)} onDelete={() => onDelete(item)} />}
             </li>
           )
         })}
@@ -180,6 +226,8 @@ function PersonalCard({
   canEdit,
   color,
   onAdd,
+  onEdit,
+  onDelete,
 }: {
   participant: BudgetParticipant
   items: BudgetItem[]
@@ -187,7 +235,10 @@ function PersonalCard({
   canEdit: boolean
   color: string
   onAdd: () => void
+  onEdit: (item: BudgetItem) => void
+  onDelete: (item: BudgetItem) => void
 }) {
+  const editable = isMine && canEdit // BUD-01-04 내 개인 경비만 (다른 사람 카드에는 없음)
   const [expanded, setExpanded] = useState(false)
   const shown = expanded ? items : items.slice(0, PREVIEW_COUNT)
   const hiddenCount = items.length - shown.length
@@ -209,31 +260,55 @@ function PersonalCard({
       </header>
       {totals && <div className="budget-card__total">{totals}</div>}
       <ul className="budget-card__list">
-        {shown.map((item) => (
-          <li key={item.itemId} className="budget-card__item">
-            {/* 사용자 요청으로 추가(기능정의서·피그마에 없음): 이름 옆 작은 회색 분류.
-                이름이 길면 이름만 …로 줄고 분류는 잘리지 않음 */}
-            <span className="budget-card__item-name">
-              <span className="budget-card__item-text" title={item.name}>
-                {item.name}
+        {shown.map((item) => {
+          const amountText =
+            item.amount === null ? (
+              <span className="budget-unknown">가격 확인 전</span>
+            ) : (
+              formatMoney(item.amount, item.currency)
+            )
+          // 사용자 요청으로 추가(기능정의서·피그마에 없음): 이름 옆 작은 회색 분류.
+          // 이름이 길면 이름만 …로 줄고 분류는 잘리지 않음
+          const nameAndAmount = (
+            <>
+              <span className="budget-card__item-name">
+                <span className="budget-card__item-text" title={item.name}>
+                  {item.name}
+                </span>
+                <span className="budget-card__item-category">{CATEGORY_LABEL[item.category]}</span>
               </span>
-              <span className="budget-card__item-category">{CATEGORY_LABEL[item.category]}</span>
-            </span>
-            <span className="budget-card__amount">
-              {item.amount === null ? (
-                <span className="budget-unknown">가격 확인 전</span>
+              <span className="budget-card__amount">{amountText}</span>
+            </>
+          )
+          return (
+            <li key={item.itemId} className="budget-card__item">
+              {editable ? (
+                // BUD-01-04 내 개인 경비: 항목을 누르면 수정 창
+                <button
+                  type="button"
+                  className="budget-card__item-button"
+                  aria-label={`${item.name} 수정`}
+                  onClick={() => onEdit(item)}
+                >
+                  {nameAndAmount}
+                </button>
               ) : (
-                formatMoney(item.amount, item.currency)
+                nameAndAmount
               )}
-              {/* TODO(D): BUD-01-04 내 개인 경비 삭제 */}
-              {isMine && canEdit && (
-                <button type="button" className="budget-icon-button" aria-label="삭제">
+              {/* BUD-01-04 내 개인 경비: 항목 오른쪽 x는 삭제 */}
+              {editable && (
+                <button
+                  type="button"
+                  className="budget-icon-button"
+                  aria-label={`${item.name} 삭제`}
+                  onClick={() => onDelete(item)}
+                >
                   ×
                 </button>
               )}
-            </span>
-          </li>
-        ))}
+            </li>
+          )
+        })}
       </ul>
       {hiddenCount > 0 && (
         <button type="button" className="budget-more" onClick={() => setExpanded(true)}>
@@ -248,10 +323,14 @@ function PersonalSection({
   data,
   myPersonal,
   onAdd,
+  onEdit,
+  onDelete,
 }: {
   data: BudgetListResponse
   myPersonal: CurrencyAmount[]
   onAdd: () => void
+  onEdit: (item: BudgetItem) => void
+  onDelete: (item: BudgetItem) => void
 }) {
   const personalItems = data.items.filter((item) => item.scope === 'PERSONAL')
   const itemsOf = (memberId: number) => personalItems.filter((item) => item.createdBy === memberId)
@@ -285,6 +364,8 @@ function PersonalSection({
               canEdit={isMine && canEdit}
               color={CARD_COLORS[index % CARD_COLORS.length]}
               onAdd={onAdd}
+              onEdit={onEdit}
+              onDelete={onDelete}
             />
           )
         })}
@@ -300,11 +381,15 @@ export default function BudgetList({
   commonTotal,
   myPersonal,
   onAdd,
+  onEdit,
+  onDelete,
 }: {
   data: BudgetListResponse
   commonTotal: BudgetTotal
   myPersonal: CurrencyAmount[]
   onAdd: (scope: BudgetScope) => void // BUD-01-02 추가 창 열기
+  onEdit: (item: BudgetItem) => void // BUD-01-04 수정 창 열기
+  onDelete: (item: BudgetItem) => void // BUD-01-04 삭제 확인 창 열기
 }) {
   const commonItems = data.items.filter((item) => item.scope === 'COMMON')
   const canEditCommon = data.myRole === 'OWNER' || data.myRole === 'EDITOR'
@@ -317,8 +402,16 @@ export default function BudgetList({
         canEdit={canEditCommon}
         commonTotal={commonTotal}
         onAdd={() => onAdd('COMMON')}
+        onEdit={onEdit}
+        onDelete={onDelete}
       />
-      <PersonalSection data={data} myPersonal={myPersonal} onAdd={() => onAdd('PERSONAL')} />
+      <PersonalSection
+        data={data}
+        myPersonal={myPersonal}
+        onAdd={() => onAdd('PERSONAL')}
+        onEdit={onEdit}
+        onDelete={onDelete}
+      />
     </>
   )
 }

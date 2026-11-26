@@ -1,4 +1,4 @@
-// BUD-01-02 경비 항목 추가 창 (와이어프레임 D-12). 수정(BUD-01-04)도 나중에 같은 창을 쓴다.
+// BUD-01-02 경비 항목 추가 창 · BUD-01-04 수정 창 (와이어프레임 D-12, 같은 창에 지금 값이 들어 있음)
 import { useEffect, useRef, useState } from 'react'
 import { Button } from '../../../shared/components/Button'
 import { Input } from '../../../shared/components/Input'
@@ -8,7 +8,10 @@ import { isBlank, replaceControlChars } from '../../../shared/utils/validation'
 import {
   addBudgetItem,
   getExchangeRate,
+  updateBudgetItem,
   type BudgetCategory,
+  type BudgetItem,
+  type BudgetItemRequest,
   type BudgetScope,
   type CalcType,
 } from '../api/budgetApi.ts'
@@ -40,6 +43,7 @@ type FieldErrors = { name?: string; amount?: string }
 export default function BudgetItemForm({
   tripId,
   scope,
+  editing,
   tripCurrency,
   memberCount,
   onClose,
@@ -47,7 +51,8 @@ export default function BudgetItemForm({
   onServerError,
 }: {
   tripId: number
-  scope: BudgetScope // 누른 버튼으로 정해짐 (공통 / 내 개인)
+  scope: BudgetScope // 누른 버튼으로 정해짐 (공통 / 내 개인), 수정이면 그 항목의 구분
+  editing?: BudgetItem // BUD-01-04 수정할 항목 (없으면 추가)
   tripCurrency: string
   memberCount: number
   onClose: () => void
@@ -55,14 +60,17 @@ export default function BudgetItemForm({
   onServerError: (message: string) => void
 }) {
   const isCommon = scope === 'COMMON'
-  // 정한 내용: 처음엔 분류·계산 방식을 고르지 않은 상태 (고르기 전에는 [저장] 비활성)
-  const [category, setCategory] = useState<BudgetCategory | null>(null)
-  const [calcType, setCalcType] = useState<CalcType | null>(null)
-  const [name, setName] = useState('')
-  const [amountText, setAmountText] = useState('')
-  const [currency, setCurrency] = useState(tripCurrency) // 기본값 여행 도시 통화
-  const [priceUnknown, setPriceUnknown] = useState(false)
-  const [memo, setMemo] = useState('')
+  // 추가: 정한 내용대로 분류·계산 방식은 고르지 않은 상태로 시작 (고르기 전에는 [저장] 비활성)
+  // 수정: 지금 값이 들어 있는 상태로 시작 (BUD-01-04)
+  const [category, setCategory] = useState<BudgetCategory | null>(editing?.category ?? null)
+  const [calcType, setCalcType] = useState<CalcType | null>(editing?.calcType ?? null)
+  const [name, setName] = useState(editing?.name ?? '')
+  const [amountText, setAmountText] = useState(
+    editing && editing.amount !== null ? formatAmountInput(String(editing.amount), editing.currency) : '',
+  )
+  const [currency, setCurrency] = useState(editing?.currency ?? tripCurrency) // 추가 기본값은 여행 도시 통화
+  const [priceUnknown, setPriceUnknown] = useState(editing ? editing.amount === null : false)
+  const [memo, setMemo] = useState(editing?.memo ?? '')
   const [errors, setErrors] = useState<FieldErrors>({})
   const [saving, setSaving] = useState(false)
   const savingRef = useRef(false) // 같은 요청 다시 보내지 않음
@@ -120,18 +128,21 @@ export default function BudgetItemForm({
     savingRef.current = true
     setSaving(true)
     try {
-      await addBudgetItem(tripId, {
+      const request: BudgetItemRequest = {
         scope,
         category: category as BudgetCategory,
         name: name.trim(), // 앞뒤 공백 제거
         calcType: isCommon ? calcType : null,
         amount: amount === null ? null : roundToCurrency(amount, currency),
+        priceUnknown,
         currency,
         memo: isCommon && !isBlank(memo) ? memo.trim() : null,
-      })
-      onSaved() // 성공: 창이 닫히고 목록에 추가 (별도 안내 없음)
+      }
+      if (editing) await updateBudgetItem(tripId, editing.itemId, request)
+      else await addBudgetItem(tripId, request)
+      onSaved() // 성공: 창이 닫히고 목록에 반영 (별도 안내 없음)
     } catch (e) {
-      // 개수 초과·권한 없음 등은 화면 아래 상태 창으로 (서버 문구 그대로)
+      // 개수 초과·권한 없음·이미 삭제됨 등은 화면 아래 상태 창으로 (서버 문구 그대로)
       onServerError(e instanceof Error ? e.message : '')
       savingRef.current = false
       setSaving(false)
@@ -157,7 +168,10 @@ export default function BudgetItemForm({
     >
       <div className="budget-form">
         <header className="budget-modal__head">
-          <h2 className="budget-modal__title">{isCommon ? '공통 경비 추가' : '개인 경비 추가'}</h2>
+          {/* 정한 내용(11/26): 수정 창 제목은 "공통 경비 수정" / "개인 경비 수정" */}
+          <h2 className="budget-modal__title">
+            {isCommon ? '공통 경비' : '개인 경비'} {editing ? '수정' : '추가'}
+          </h2>
           <button type="button" className="budget-modal__close" aria-label="닫기" onClick={onClose}>
             ×
           </button>
