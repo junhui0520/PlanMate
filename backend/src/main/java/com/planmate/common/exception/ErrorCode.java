@@ -46,6 +46,9 @@ public enum ErrorCode {
     BUDGET_COMMON_LIMIT(HttpStatus.CONFLICT, "공통 경비는 최대 200개까지 추가할 수 있어요."),
     BUDGET_PERSONAL_LIMIT(HttpStatus.CONFLICT, "개인 경비는 최대 200개까지 추가할 수 있어요."),
     BUDGET_COMMON_EDIT_FORBIDDEN(HttpStatus.FORBIDDEN, "공통 경비는 편집 권한이 있어야 추가할 수 있어요."),
+    // BUD-01-04 경비 항목 수정·삭제
+    BUDGET_ITEM_NOT_FOUND(HttpStatus.NOT_FOUND, "이미 삭제된 경비예요."),
+    BUDGET_EDIT_FORBIDDEN(HttpStatus.FORBIDDEN, "이 경비를 고칠 권한이 없어요."),
 
     ;
 
