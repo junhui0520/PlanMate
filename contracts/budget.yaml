@@ -2,28 +2,17 @@ openapi: 3.1.0
 
 info:
   title: "PlanMate 예상 경비 API (D 파트)"
-  version: "0.2.0"
+  version: "0.3.0"
   description: |
     예상 경비·환율 API 약속. 기준: 세부기능정의서 v33 BUD-01~04, DB설계서 v7 BUDGET_ITEM.
     - 응답·오류 모양은 `./common.yaml`을 따른다(ApiResponse, ErrorResponse, 공통 응답들).
-    - 지금 있는 API: BUD-01-01 경비 목록. 다른 기능은 만들 때 이 파일에 더한다.
-    - BUD-03 합계(BudgetSummaryResponse)는 응답 모양만 정해 두었다. 주소(GET /api/trips/{tripId}/budget-summary 예정)는
-      여행 인원(B의 TripService)과 로그인(A의 pjh/security)이 생긴 뒤 연다.
-    - BUD-01-02 추가(BudgetItemRequest → BudgetItemResponse)도 요청 모양만 정해 두었다.
-      주소(POST /api/trips/{tripId}/budget-items 예정)는 로그인(A의 pjh/security)이 생긴 뒤 연다.
-    - BUD-01-04 수정·삭제도 로그인이 생긴 뒤 연다. 예정 주소와 규칙:
-      - 수정 PUT /api/trips/{tripId}/budget-items/{itemId}: 요청은 BudgetItemRequest(scope는 원래 값과 같아야 함), 응답은 BudgetItemResponse
-      - 삭제 DELETE /api/trips/{tripId}/budget-items/{itemId}: 응답 data는 null
-      - 입력 규칙은 추가와 같고 개수 제한은 보지 않는다. 동시 수정은 나중에 저장한 값으로 덮어쓴다(버전 칸 없음).
-      - 없거나 다른 여행의 항목이면 BUDGET_ITEM_NOT_FOUND(404) "이미 삭제된 경비예요."
-      - 공통은 소유자·편집 참여자, 개인은 주인 본인만. 아니면 BUDGET_EDIT_FORBIDDEN(403) "이 경비를 고칠 권한이 없어요."
-      - 교통비로 반영된 항목(ROUTE_FARE)도 고치거나 지울 수 있고, 고쳐도 amountSource는 그대로다.
-        지우면 구간 연결 기록(FARE_EXPENSE_LINK)은 DB가 함께 지운다.
-    - BUD-02-03 펼친 칸 메모도 로그인이 생긴 뒤 연다. 예정 주소와 규칙:
-      - 메모 PATCH /api/trips/{tripId}/budget-items/{itemId}/memo: 요청 {memo: string|null}, 응답은 BudgetItemResponse
-      - 공통 경비만(개인 경비면 INVALID_INPUT), 0~200자·앞뒤 공백 제거·제어문자 불가, 비우면 삭제(memo null)
-      - 소유자·편집 참여자만. 아니면 BUDGET_EDIT_FORBIDDEN(403), 없으면 BUDGET_ITEM_NOT_FOUND(404)
-      - 교통비 항목의 출처·확인 시점은 C 파트(FareService) 데이터라 아직 응답에 없다. TODO(C와 응답 모양 맞추기)
+    - 지금 있는 API: BUD-01-01 목록, BUD-03 합계, BUD-01-02 추가(BUD-02-01 예산 기준 포함), BUD-01-04 수정·삭제, BUD-02-03 메모.
+      BUD-04-03 환율 위젯 주소는 화면 연결 때 더한다.
+    - 모두 로그인이 필요하다. 권한은 A의 TripAccessChecker로 저장 직전에 다시 확인한다
+      (참여자 아님·휴지통 여행이면 RESOURCE_NOT_ACCESSIBLE 404).
+    - POST·PUT·PATCH·DELETE는 CSRF 헤더가 필요하다(common.yaml, 화면은 shared/api/client.ts가 붙임).
+    - 동시 수정은 나중에 저장한 값으로 덮어쓴다(버전 칸 없음).
+    - 교통비 항목의 출처·확인 시점은 C 파트(FareService) 데이터라 아직 응답에 없다. TODO(C와 응답 모양 맞추기)
     - 경비 목록은 경비 탭이 쓰는 여행 정보를 함께 준다(BudgetListResponse): 여행 통화·인원·일수(B의 TripService.findBasicInfo),
       내 회원 ID·내 역할(A의 TripAccessChecker). 여행 통화는 여행 도시의 나라 코드를 D가 통화로 바꾼다
       (자바 나라별 통화, 은행 표기와 다른 중국은 CNH, 알 수 없으면 KRW).
@@ -69,8 +58,196 @@ paths:
         '500':
           $ref: './common.yaml#/components/responses/InternalServerError'
 
+    post:
+      summary: "BUD-01-02 경비 항목 추가 (BUD-02-01 예산 기준 계산 포함)"
+      description: |
+        요청 규칙과 오류는 BudgetItemRequest 설명을 따른다. 만든 사람은 로그인 회원.
+        예산 기준 계산(budgetRule)이면 금액은 서버가 계산한다(여행 인원은 B의 여행 정보).
+        구분·분류가 없거나 곱할 값 범위를 넘으면 INVALID_INPUT(400, 화면에서 막는 값).
+        권한: 소유자·편집 참여자(조회 참여자 불가).
+      tags: [budget]
+      parameters:
+        - $ref: '#/components/parameters/TripId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BudgetItemRequest'
+      responses:
+        '200':
+          description: "추가된 항목"
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: './common.yaml#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/BudgetItemResponse'
+        '400':
+          $ref: './common.yaml#/components/responses/BadRequest'
+        '401':
+          $ref: './common.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common.yaml#/components/responses/Forbidden'
+        '404':
+          $ref: './common.yaml#/components/responses/NotFound'
+        '409':
+          $ref: './common.yaml#/components/responses/Conflict'
+
+  /api/trips/{tripId}/budget-items/{itemId}:
+    put:
+      summary: "BUD-01-04 경비 항목 수정"
+      description: |
+        요청은 BudgetItemRequest. scope는 원래 값과 같아야 하고 budgetRule은 보낼 수 없다(INVALID_INPUT).
+        입력 규칙은 추가와 같고 개수 제한은 보지 않는다. 교통비 항목(ROUTE_FARE)도 고칠 수 있고 amountSource는 그대로다.
+        없거나 다른 여행의 항목이면 BUDGET_ITEM_NOT_FOUND(404) "이미 삭제된 경비예요."
+        공통은 소유자·편집 참여자, 개인은 주인 본인만. 아니면 BUDGET_EDIT_FORBIDDEN(403) "이 경비를 고칠 권한이 없어요."
+      tags: [budget]
+      parameters:
+        - $ref: '#/components/parameters/TripId'
+        - $ref: '#/components/parameters/ItemId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BudgetItemRequest'
+      responses:
+        '200':
+          description: "수정된 항목"
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: './common.yaml#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/BudgetItemResponse'
+        '400':
+          $ref: './common.yaml#/components/responses/BadRequest'
+        '401':
+          $ref: './common.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common.yaml#/components/responses/Forbidden'
+        '404':
+          $ref: './common.yaml#/components/responses/NotFound'
+    delete:
+      summary: "BUD-01-04 경비 항목 삭제"
+      description: |
+        응답 data는 null. 교통비 항목이면 구간 연결 기록(FARE_EXPENSE_LINK)은 DB가 함께 지운다.
+        없으면 BUDGET_ITEM_NOT_FOUND(404), 권한이 없으면 BUDGET_EDIT_FORBIDDEN(403).
+      tags: [budget]
+      parameters:
+        - $ref: '#/components/parameters/TripId'
+        - $ref: '#/components/parameters/ItemId'
+      responses:
+        '200':
+          description: "삭제됨 (data null)"
+          content:
+            application/json:
+              schema:
+                $ref: './common.yaml#/components/schemas/ApiResponse'
+        '401':
+          $ref: './common.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common.yaml#/components/responses/Forbidden'
+        '404':
+          $ref: './common.yaml#/components/responses/NotFound'
+
+  /api/trips/{tripId}/budget-items/{itemId}/memo:
+    patch:
+      summary: "BUD-02-03 펼친 칸 메모 작성·수정·삭제"
+      description: |
+        공통 경비만(개인 경비면 INVALID_INPUT). 0~200자·앞뒤 공백 제거·제어문자 불가, 비우거나 null이면 삭제.
+        소유자·편집 참여자만. 아니면 BUDGET_EDIT_FORBIDDEN(403), 없으면 BUDGET_ITEM_NOT_FOUND(404).
+      tags: [budget]
+      parameters:
+        - $ref: '#/components/parameters/TripId'
+        - $ref: '#/components/parameters/ItemId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BudgetMemoRequest'
+      responses:
+        '200':
+          description: "메모가 바뀐 항목"
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: './common.yaml#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/BudgetItemResponse'
+        '400':
+          $ref: './common.yaml#/components/responses/BadRequest'
+        '401':
+          $ref: './common.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common.yaml#/components/responses/Forbidden'
+        '404':
+          $ref: './common.yaml#/components/responses/NotFound'
+
+  /api/trips/{tripId}/budget-summary:
+    get:
+      summary: "BUD-03-01·03·04 경비 합계"
+      description: |
+        공통 경비 합계(통화별 + 원화 합산)와 내 1인 경비(공통 합계 / 여행 인원 + 내 개인 경비), 빠진 항목(가격 미확인·환율 없음).
+        계산은 서버에서만 하고 화면은 받은 값을 보여 준다. 여행 인원은 B의 여행 정보, 환율은 오늘 환율(BUD-04-01).
+        권한: 로그인 + 이 여행의 참여자 + 휴지통 아님.
+      tags: [budget]
+      parameters:
+        - $ref: '#/components/parameters/TripId'
+      responses:
+        '200':
+          description: "합계"
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: './common.yaml#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/BudgetSummaryResponse'
+        '401':
+          $ref: './common.yaml#/components/responses/Unauthorized'
+        '404':
+          $ref: './common.yaml#/components/responses/NotFound'
+
 components:
+  parameters:
+    TripId:
+      name: tripId
+      in: path
+      required: true
+      description: "여행 ID"
+      schema:
+        $ref: './common.yaml#/components/schemas/Id'
+    ItemId:
+      name: itemId
+      in: path
+      required: true
+      description: "경비 항목 ID"
+      schema:
+        $ref: './common.yaml#/components/schemas/Id'
+
   schemas:
+    BudgetMemoRequest:
+      type: object
+      description: "BUD-02-03 메모 입력값. 비우거나 null이면 메모 삭제"
+      properties:
+        memo:
+          type: [string, "null"]
+          maxLength: 200
+
     BudgetListResponse:
       type: object
       description: "BUD-01-01 경비 탭 목록. 경비 항목과 화면이 쓰는 여행 정보"

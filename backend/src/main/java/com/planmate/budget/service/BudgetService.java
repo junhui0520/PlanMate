@@ -188,7 +188,6 @@ public class BudgetService {
 	/**
 	 * BUD-01-04 경비 항목 수정. 입력 규칙은 추가(BUD-01-02)와 같고, 개수 제한은 보지 않는다.
 	 * 동시 수정은 나중에 저장한 값으로 덮어쓴다(COL-06-02).
-	 * 수정 주소(PUT /api/trips/{tripId}/budget-items/{itemId})는 B의 TripStatusReader가 생긴 뒤 연다.
 	 * TODO(B에 요청): 저장 후 다른 참여자 화면 반영은 SyncService (COL-06-01)
 	 */
 	@Transactional
@@ -213,7 +212,6 @@ public class BudgetService {
 	/**
 	 * BUD-01-04 경비 항목 삭제. 교통비로 반영된 항목이면 구간 연결 기록(FARE_EXPENSE_LINK)도
 	 * DB의 ON DELETE CASCADE로 함께 삭제된다(RTE-03-02).
-	 * 삭제 주소(DELETE ...)는 B의 TripStatusReader가 생긴 뒤 연다.
 	 * TODO(B에 요청): 삭제 후 다른 참여자 화면 반영은 SyncService (COL-06-01)
 	 */
 	@Transactional
@@ -225,7 +223,6 @@ public class BudgetService {
 	 * BUD-02-03 펼친 칸에서 메모 작성·수정·삭제 (공통 경비만, 비우면 삭제).
 	 * 규칙은 BUD-01-02 메모와 같다: 0~200자, 앞뒤 공백 제거, 제어문자 불가. 동시 수정은 나중 값으로 덮어씀.
 	 * 정한 내용(11/26): 권한 없음은 BUD-01-04 문구 "이 경비를 고칠 권한이 없어요."를 같이 쓴다.
-	 * 메모 주소(PATCH .../memo)는 B의 TripStatusReader가 생긴 뒤 연다.
 	 * TODO(B에 요청): 저장 후 다른 참여자 화면 반영은 SyncService (COL-06-01)
 	 */
 	@Transactional
