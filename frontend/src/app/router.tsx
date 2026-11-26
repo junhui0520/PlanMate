@@ -12,6 +12,7 @@
  */
 import { createBrowserRouter, Navigate } from 'react-router';
 import { RouterProvider } from 'react-router/dom';
+import CommunityListPage from '../features/community/pages/CommunityListPage';
 import { EmptyState } from '../shared/components/EmptyState';
 import { AdminLayout } from './layouts/AdminLayout';
 import { MainLayout } from './layouts/MainLayout';
@@ -47,7 +48,7 @@ const router = createBrowserRouter([
       { path: 'trips/:tripId', element: <RoutePlaceholder screen="B-03" title="여행 화면(일정·후보·체크리스트 탭)" pageFile="schedule/pages/TripDetailPage.tsx" part="B" /> },
       { path: 'trips/:tripId/budget', element: <RoutePlaceholder screen="D-11" title="경비 탭" pageFile="budget/pages/BudgetPage.tsx" part="D" /> },
       { path: 'trips/:tripId/share', element: <RoutePlaceholder screen="D-08" title="공개 미리보기" pageFile="community/pages/PostCreatePage.tsx" part="D" /> },
-      { path: 'community', element: <RoutePlaceholder screen="D-01" title="커뮤니티" pageFile="community/pages/CommunityListPage.tsx" part="D" /> },
+      { path: 'community', element: <CommunityListPage /> },
       { path: 'community/:postId', element: <RoutePlaceholder screen="D-02·03·14" title="공개 여행 상세" pageFile="community/pages/PostDetailPage.tsx" part="D" /> },
       {
         path: 'mypage',

@@ -1,0 +1,103 @@
+/* PUB-03-01 공개 여행 목록 (와이어프레임 D-01). 값은 shared/styles/variables.css */
+.community-page {
+  max-width: var(--layout-max-width);
+  margin: 0 auto;
+  padding: var(--space-7) var(--space-8);
+}
+
+.community-page__title {
+  margin: 0 0 var(--space-5);
+  font-size: var(--font-size-xxl);
+  font-weight: var(--font-weight-bold);
+}
+
+/* 카드 3개씩 한 줄 */
+.community-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-4);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* 빈 카드 3개(스켈레톤)도 카드처럼 한 줄에 3개 */
+.community-skeleton .pm-skeleton {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-4);
+}
+
+.community-skeleton .pm-skeleton--card > span {
+  height: 254px;
+}
+
+.community-skeleton--more {
+  margin-top: var(--space-4);
+}
+
+.community-sentinel {
+  height: 1px;
+}
+
+/* ---- 카드 (PostCard) ---- */
+.post-card {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  padding: var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-bg);
+  color: var(--color-text);
+  text-decoration: none;
+}
+
+.post-card:hover,
+.post-card:focus-visible {
+  border-color: var(--color-border-strong);
+}
+
+.post-card__image {
+  width: 100%;
+  aspect-ratio: 355 / 150; /* 피그마 D-01 사진 칸 */
+  border-radius: var(--radius-md);
+  object-fit: cover;
+}
+
+/* 사진이 없으면 기본 배경 */
+.post-card__image--default {
+  background: var(--color-disabled-bg);
+}
+
+.post-card__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin-top: var(--space-3);
+}
+
+/* 제목 최대 2줄, 넘치면 ... */
+.post-card__title {
+  display: -webkit-box;
+  margin: 0;
+  overflow: hidden;
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-bold);
+  line-height: var(--line-height-base);
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+}
+
+.post-card__sub {
+  margin: 0;
+  font-size: var(--font-size-md);
+  color: var(--color-text-sub);
+}
+
+.post-card__meta {
+  margin: 0;
+  font-size: var(--font-size-sm);
+  color: var(--color-text-disabled);
+}
