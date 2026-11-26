@@ -19,14 +19,19 @@ public enum ErrorCode {
     METHOD_NOT_ALLOWED(HttpStatus.METHOD_NOT_ALLOWED, "요청을 처리하지 못했어요. 잠시 후 다시 시도해 주세요."),
     DUPLICATE_REQUEST(HttpStatus.CONFLICT, "이미 처리된 요청이에요."),
     INTERNAL_SERVER_ERROR(HttpStatus.INTERNAL_SERVER_ERROR, "요청을 처리하지 못했어요. 잠시 후 다시 시도해 주세요."),
+    // SCH·RTE·SUP·TRP 여러 기능의 '권한 없음' 공통 문구 (조회 참여자가 편집하려 할 때)
+    EDIT_PERMISSION_DENIED(HttpStatus.FORBIDDEN, "편집 권한이 없어요."),
+    // CSRF 토큰이 없거나 맞지 않음 (사용자 확정 11/26)
+    CSRF_TOKEN_INVALID(HttpStatus.FORBIDDEN, "요청을 처리하지 못했어요. 잠시 후 다시 시도해 주세요."),
 
-    // ===== 공통 접근 제어 (ACC-07) — 상수만 둠, 판정 로직은 pjh/security에서 만든다 =====
+    // ===== 공통 접근 제어 (ACC-07) — 판정은 common/security 체커 =====
     // ACC-07-01 로그인·계정 상태
     LOGIN_REQUIRED(HttpStatus.UNAUTHORIZED, "로그인이 필요해요."),
     COMMUNITY_RESTRICTED(HttpStatus.FORBIDDEN, "이용 제한 중에는 커뮤니티 활동을 할 수 없어요."),
     ACCOUNT_UNAVAILABLE(HttpStatus.FORBIDDEN, "이용할 수 없는 계정이에요."),
     // ACC-07-02 여행·개인 자료 접근
     RESOURCE_NOT_ACCESSIBLE(HttpStatus.NOT_FOUND, "이미 삭제되었거나 볼 수 없는 내용이에요."),
+    // 화면을 연 채 역할이 바뀐 경우(B 실시간 전파용)
     EDIT_PERMISSION_CHANGED(HttpStatus.FORBIDDEN, "편집 권한이 변경됐어요. 최신 상태를 확인해 주세요."),
     // ACC-07-03 관리자 검사
     ADMIN_ONLY(HttpStatus.FORBIDDEN, "관리자만 사용할 수 있어요."),

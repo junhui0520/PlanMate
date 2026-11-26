@@ -1,6 +1,8 @@
 spring:
   application:
     name: PlanMate
+  autoconfigure:
+    exclude: org.springframework.boot.security.autoconfigure.UserDetailsServiceAutoConfiguration   # 로그인은 pjh/login에서 PasswordEncoder로 직접 확인(기본 사용자 불필요)
   datasource:                     # 값은 환경변수 또는 application-local.yml(local 프로필)에서 덮어씀
     url: ${DB_URL}
     username: ${DB_USERNAME}

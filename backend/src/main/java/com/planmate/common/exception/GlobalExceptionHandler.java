@@ -120,5 +120,5 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(errorCode.getStatus()).body(ApiResponse.fail(errorCode, fieldErrors));
     }
 
-    // TODO(ACC-07): 메서드 보안의 AccessDeniedException·AuthenticationException 처리는 pjh/security에서 추가
+    // 메서드 보안 미사용 — 접근 제어는 common/security 체커가 BusinessException으로 처리 (ACC-07)
 }
