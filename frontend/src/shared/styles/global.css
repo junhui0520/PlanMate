@@ -1,0 +1,372 @@
+/*
+ * PlanMate 전체 기본 스타일 + 공통 부품 클래스.
+ * main.tsx는 이 파일 하나만 불러온다(3-B). 클래스는 pm- 접두사 + BEM(pm-btn, pm-btn--primary).
+ * 색·크기는 variables.css 변수만 쓴다.
+ */
+@import './variables.css';
+
+/* ===== 기본 리셋 ===== */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+}
+
+body {
+  min-width: var(--layout-min-width);
+  font-family: var(--font-family);
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-regular);
+  line-height: var(--line-height-base);
+  color: var(--color-text);
+  background: var(--color-bg);
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+  color: inherit;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+/* ===== 버튼 (Button.tsx) ===== */
+.pm-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-1);
+  min-height: 40px;
+  padding: 0 var(--space-4);
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-bold);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+/* 주요 버튼: 검정 채움 + 흰 글자 */
+.pm-btn--primary {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+  color: var(--color-on-primary);
+}
+
+/* 보조 버튼: 흰 바탕 + 검정 테두리 */
+.pm-btn--secondary {
+  background: var(--color-bg);
+  border-color: var(--color-border-strong);
+  color: var(--color-text);
+}
+
+/* 텍스트 버튼: 밑줄 글자 */
+.pm-btn--text {
+  min-height: auto;
+  padding: 0;
+  background: none;
+  border: none;
+  color: var(--color-text);
+  font-weight: var(--font-weight-regular);
+  text-decoration: underline;
+}
+
+/* 비활성: 회색 바탕 + 회색 글자 */
+.pm-btn:disabled {
+  background: var(--color-disabled-bg);
+  border-color: var(--color-disabled-bg);
+  color: var(--color-text-disabled);
+  cursor: not-allowed;
+}
+
+.pm-btn--text:disabled {
+  background: none;
+}
+
+/* ===== 입력칸 (Input.tsx) ===== */
+.pm-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.pm-field__label {
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-bold);
+}
+
+.pm-field__input {
+  width: 100%;
+  height: 40px;
+  padding: 0 var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg);
+}
+
+.pm-field__input:focus {
+  outline: none;
+  border-color: var(--color-border-strong);
+}
+
+.pm-field__input[aria-invalid='true'] {
+  border-color: var(--color-danger);
+}
+
+.pm-field__input:disabled {
+  background: var(--color-bg-sub);
+  color: var(--color-text-disabled);
+}
+
+/* ACC-01-01 입력칸 아래 오류와 안내를 구분 */
+.pm-field__hint {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-sub);
+}
+
+.pm-field__error {
+  font-size: var(--font-size-xs);
+  color: var(--color-danger);
+}
+
+.pm-field__count {
+  align-self: flex-end;
+  font-size: var(--font-size-xs);
+  color: var(--color-text-sub);
+}
+
+/* ===== 팝업 창 (Modal.tsx, ConfirmDialog.tsx) ===== */
+.pm-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-modal);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--color-overlay);
+}
+
+.pm-modal {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  width: 480px;
+  max-height: calc(100vh - var(--space-8) * 2);
+  padding: var(--space-6);
+  border-radius: var(--radius-lg);
+  background: var(--color-bg);
+  overflow-y: auto;
+}
+
+.pm-modal:focus {
+  outline: none;
+}
+
+.pm-modal--sm {
+  width: 360px;
+}
+
+.pm-modal--md {
+  width: 480px;
+}
+
+.pm-modal--lg {
+  width: 720px;
+}
+
+.pm-modal__title {
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-bold);
+}
+
+.pm-modal__body {
+  font-size: var(--font-size-md);
+}
+
+/* 버튼은 오른쪽 아래 (Figma 확인 창) */
+.pm-modal__footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+}
+
+/* ===== 상태 창 (Toast.tsx): 검정 바탕 둥근 박스, 화면 아래 가운데 고정 ===== */
+.pm-toast {
+  position: fixed;
+  left: 50%;
+  bottom: var(--space-8);
+  z-index: var(--z-toast);
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  max-width: calc(var(--layout-min-width) - var(--space-8) * 2);
+  padding: var(--space-3) var(--space-5);
+  border-radius: var(--radius-lg);
+  background: var(--color-toast-bg);
+  color: var(--color-toast-text);
+  transform: translateX(-50%);
+}
+
+.pm-toast__message {
+  font-size: var(--font-size-md);
+}
+
+.pm-toast__action,
+.pm-toast__close {
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--color-toast-text);
+  font-size: var(--font-size-md);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.pm-toast__action {
+  font-weight: var(--font-weight-bold);
+  text-decoration: underline;
+}
+
+.pm-toast__close {
+  display: inline-flex;
+  align-items: center;
+}
+
+/* ===== 로딩 스켈레톤 (Loading.tsx, TRP-02-01 스피너는 쓰지 않음) ===== */
+.pm-skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.pm-skeleton--card > span {
+  display: block;
+  height: 120px;
+  border-radius: var(--radius-lg);
+  background: var(--color-bg-sub);
+}
+
+.pm-skeleton--line > span {
+  display: block;
+  height: 16px;
+  border-radius: var(--radius-sm);
+  background: var(--color-bg-sub);
+}
+
+/* ===== 공통 틀 (app/layouts, Figma: GNB 높이 60, 본문 가운데 정렬 최대 폭 1280, 좌측 메뉴 폭 220) ===== */
+.pm-layout {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+
+.pm-layout__body {
+  display: flex;
+  flex: 1;
+  width: 100%;
+  max-width: var(--layout-max-width);
+  margin: 0 auto;
+}
+
+.pm-layout__content {
+  flex: 1;
+  min-width: 0;
+  padding: var(--space-6) var(--space-7);
+}
+
+/* GNB: 아래쪽 테두리, 고정(sticky)하지 않음 */
+.pm-gnb {
+  height: var(--gnb-height);
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-bg);
+}
+
+.pm-gnb__inner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 100%;
+  max-width: var(--layout-max-width);
+  margin: 0 auto;
+  padding: 0 var(--space-7);
+}
+
+.pm-gnb__nav {
+  display: flex;
+  align-items: center;
+  gap: var(--space-6);
+}
+
+/* LOGO: 회색 박스 + 굵은 글자 (로고 이미지는 디자인 병합 때) */
+.pm-gnb__logo {
+  display: inline-flex;
+  align-items: center;
+  padding: var(--space-1) var(--space-3);
+  border-radius: var(--radius-sm);
+  background: var(--color-disabled-bg);
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-bold);
+}
+
+.pm-gnb__link {
+  font-size: var(--font-size-md);
+  color: var(--color-text);
+}
+
+.pm-gnb__link.is-active {
+  font-weight: var(--font-weight-bold);
+}
+
+.pm-gnb__right {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+}
+
+/* 좌측 메뉴: 오른쪽 테두리, 제목 굵게, 항목은 세로 목록 */
+.pm-side-menu {
+  display: flex;
+  flex: 0 0 var(--side-menu-width);
+  flex-direction: column;
+  gap: var(--space-1);
+  width: var(--side-menu-width);
+  padding: var(--space-6) var(--space-4);
+  border-right: 1px solid var(--color-border);
+}
+
+.pm-side-menu__title {
+  padding: 0 var(--space-3) var(--space-3);
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-bold);
+}
+
+.pm-side-menu__link {
+  display: block;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  font-size: var(--font-size-md);
+  color: var(--color-text);
+}
+
+.pm-side-menu__link.is-active {
+  font-weight: var(--font-weight-bold);
+}
+
+/* ===== 빈 상태 (EmptyState.tsx) ===== */
+.pm-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-3);
+  padding: var(--space-8) var(--space-4);
+  color: var(--color-text-sub);
+  font-size: var(--font-size-md);
+  text-align: center;
+}
