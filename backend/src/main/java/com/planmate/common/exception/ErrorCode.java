@@ -53,6 +53,8 @@ public enum ErrorCode {
     // ===== C 파트 (place·ai·route) =====
 
     // ===== D 파트 (community·budget) =====
+    // PUB-04-01 공개 상세: 비공개·관리자 숨김·원래 여행 휴지통·없는 게시물
+    PUBLIC_POST_NOT_VISIBLE(HttpStatus.NOT_FOUND, "볼 수 없는 게시물이에요."),
 
     ;
 
