@@ -25,9 +25,9 @@ public class BudgetService {
 	 */
 	@Transactional(readOnly = true)
 	public List<BudgetItemResponse> getBudgetItems(Long tripId) {
-		// TODO(A에 요청): TripAccessChecker로 검사
+		// TODO(A에 요청): TripAccessChecker로 검사 (pjh/security 머지 후)
 		//   - 로그인 상태, 요청 시점에 이 여행의 참여자(소유자·편집·조회), 여행이 휴지통(TRASHED)이 아님
-		//   - 위반이면 BusinessException(ErrorCode.XXX) — TODO(공통): common/exception 이 생기면
+		//   - 위반이면 공통 ErrorCode(LOGIN_REQUIRED, RESOURCE_NOT_ACCESSIBLE 등)로 BusinessException
 		return budgetItemRepository.findByTripIdOrderByItemIdAsc(tripId).stream()
 				.map(BudgetItemResponse::from)
 				.toList();
