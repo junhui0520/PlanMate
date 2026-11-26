@@ -1,0 +1,362 @@
+openapi: 3.1.0
+
+info:
+  title: "PlanMate 공통 API 약속"
+  version: "1.0.0"
+  description: |
+    모든 기능 API가 같이 쓰는 응답·에러·페이지·날짜 형식. 기능별 약속은 `contracts/<기능>.yaml`에 쓰고,
+    이 파일의 components를 `$ref: './common.yaml#/components/...'`로 가져다 쓴다.
+
+    ## 공통 규칙
+    - **칸 이름**: JSON은 camelCase(`tripId`), DB는 대문자+밑줄(`TRIP_ID`) (AGENTS §5).
+    - **응답 모양**: 모든 응답은 ApiResponse `{success, data, message}`.
+      - 성공: `data`에 결과, `message`는 보통 null. 성공 안내 문구는 화면이 정한다.
+      - 실패: `success=false`, `data`=ErrorData `{code, fieldErrors}`, `message`=ErrorCode 문구.
+    - **목록**: `data` 안에 PageResponse를 담는다. `page`는 0부터 세고, `size` 기본값은 각 기능 약속에 적는다(예: 10개씩, 20개씩).
+    - **같은 요청 두 번 처리 방지** (TRP-01-03·SCH-06-01·PUB-01-03·PUB-07-02·AIT-06-01):
+      요청 본문에 `requestKey`를 넣는다. 화면이 동작 1번마다 새로 만들고(`crypto.randomUUID()`),
+      같은 동작을 재시도할 때는 같은 값을 다시 보낸다.
+    - **날짜·시각**
+      - 날짜 `"2026-11-25"`. 여행 안의 날짜는 여행지 현지 기준, 시간대 변환 없음.
+      - 기록 시각 `"2026-11-25T21:15:00"`. 서버 시각, 시간대 오프셋 없음, 소수 초가 붙을 수 있음.
+      - 방문시간 `"HH:mm"`(24시간). 화면 표시는 12시간제로 화면이 바꾼다.
+    - **ID**: 정수(int64).
+    - **로그인**: Spring Security 서버 세션 + Spring Session JDBC (JWT 쓰지 않음).
+      화면은 쿠키를 포함해서 호출한다(`credentials: 'include'`).
+    - **401·403 본문**: ApiResponse 형식으로 나오는 것은 pjh/security(ACC-07) 이후 적용.
+      지금 브랜치에서는 Boot 기본 보안이 본문 없이 401을 준다.
+
+servers:
+  - url: http://localhost:8080
+    description: "로컬 개발 (VITE_API_BASE_URL과 같은 값)"
+
+paths: {}
+
+components:
+  schemas:
+    ApiResponse:
+      type: object
+      description: |
+        모든 API의 공통 응답 {success, data, message} (AGENTS §6, ApiResponse.java).
+        기능별 yaml에서는 allOf로 data 타입을 덮어쓴다. 예:
+        ```yaml
+        allOf:
+          - $ref: './common.yaml#/components/schemas/ApiResponse'
+          - type: object
+            properties:
+              data:
+                $ref: '#/components/schemas/TripDetailResponse'
+        ```
+      required: [success, data, message]
+      properties:
+        success:
+          type: boolean
+          description: "성공 여부"
+        data:
+          description: "결과 값. 어떤 값이든 되고 null도 된다(기능별 yaml에서 덮어씀). 실패하면 ErrorData."
+        message:
+          type: [string, "null"]
+          description: "안내 문구. 성공하면 보통 null, 실패하면 ErrorCode 문구."
+      examples:
+        - success: true
+          data:
+            tripId: 1
+          message: null
+
+    ErrorResponse:
+      description: "공통 실패 응답. data는 ErrorData, message는 ErrorCode 문구 (GlobalExceptionHandler.java)."
+      allOf:
+        - $ref: '#/components/schemas/ApiResponse'
+        - type: object
+          properties:
+            success:
+              const: false
+            data:
+              $ref: '#/components/schemas/ErrorData'
+            message:
+              type: string
+              description: "ErrorCode 문구 (null 아님)"
+
+    ErrorData:
+      type: object
+      description: "실패 응답의 data (ApiResponse.ErrorData)."
+      required: [code, fieldErrors]
+      properties:
+        code:
+          $ref: '#/components/schemas/ErrorCode'
+        fieldErrors:
+          type: array
+          description: "입력 칸별 오류. 없으면 빈 배열 []이고 null이 아니다."
+          items:
+            $ref: '#/components/schemas/FieldErrorData'
+
+    FieldErrorData:
+      type: object
+      description: |
+        입력 칸 하나의 오류 (ApiResponse.FieldErrorData).
+        @RequestParam·@PathVariable 검증 실패는 field가 파라미터 이름, 서비스 @Validated 검증 실패는 경로(예: create.req.title), DTO 클래스 단위 검증 실패는 DTO 객체 이름으로 나온다.
+        입력 폼 검증은 @Valid @RequestBody DTO로 하면 field가 DTO 칸 이름(camelCase)으로 나온다.
+      required: [field, message]
+      properties:
+        field:
+          type: string
+          description: "오류가 난 칸 이름"
+        message:
+          type: string
+          description: "DTO 검증 어노테이션의 message(기능정의서 문구)가 그대로 나간다."
+
+    ErrorCode:
+      type: string
+      description: |
+        ErrorCode enum의 이름이 그대로 나간다 (ErrorCode.java). 파트별 코드가 계속 늘어나서 enum으로 나열하지 않는다.
+
+        | 상수 | HTTP 상태 | 문구 | 기능 ID |
+        |---|---|---|---|
+        | INVALID_INPUT | 400 | 입력값을 확인해 주세요. | 공통 |
+        | API_NOT_FOUND | 404 | 요청을 처리하지 못했어요. 잠시 후 다시 시도해 주세요. | 공통 |
+        | METHOD_NOT_ALLOWED | 405 | 요청을 처리하지 못했어요. 잠시 후 다시 시도해 주세요. | 공통 |
+        | DUPLICATE_REQUEST | 409 | 이미 처리된 요청이에요. | 공통 |
+        | INTERNAL_SERVER_ERROR | 500 | 요청을 처리하지 못했어요. 잠시 후 다시 시도해 주세요. | 공통 |
+        | LOGIN_REQUIRED | 401 | 로그인이 필요해요. | ACC-07-01 |
+        | COMMUNITY_RESTRICTED | 403 | 이용 제한 중에는 커뮤니티 활동을 할 수 없어요. | ACC-07-01 |
+        | ACCOUNT_UNAVAILABLE | 403 | 이용할 수 없는 계정이에요. | ACC-07-01 |
+        | RESOURCE_NOT_ACCESSIBLE | 404 | 이미 삭제되었거나 볼 수 없는 내용이에요. | ACC-07-02 |
+        | EDIT_PERMISSION_CHANGED | 403 | 편집 권한이 변경됐어요. 최신 상태를 확인해 주세요. | ACC-07-02 |
+        | ADMIN_ONLY | 403 | 관리자만 사용할 수 있어요. | ACC-07-03 |
+        | ADMIN_REAUTH_REQUIRED | 403 | 보안을 위해 본인 확인을 다시 진행해 주세요. | ACC-07-03 |
+
+        각 파트 코드는 contracts/<기능>.yaml의 해당 API에 적는다.
+      example: "INVALID_INPUT"
+
+    PageResponse:
+      type: object
+      description: |
+        목록(페이지) 응답 (PageResponse.java). ApiResponse의 data 안에 담는다. page는 0부터 센다.
+        기능별 yaml에서는 allOf로 content 항목 타입을 정한다. 예:
+        ```yaml
+        allOf:
+          - $ref: './common.yaml#/components/schemas/PageResponse'
+          - type: object
+            properties:
+              content:
+                type: array
+                items:
+                  $ref: '#/components/schemas/TripListResponse'
+        ```
+      required: [content, page, size, totalElements, totalPages, hasNext]
+      properties:
+        content:
+          type: array
+          description: "이번 페이지 항목 (기능별 yaml에서 덮어씀)"
+          items: {}
+        page:
+          type: integer
+          minimum: 0
+          description: "현재 페이지 (0부터)"
+        size:
+          type: integer
+          minimum: 1
+          description: "페이지 크기"
+        totalElements:
+          type: integer
+          format: int64
+          description: "전체 항목 수"
+        totalPages:
+          type: integer
+          description: "전체 페이지 수"
+        hasNext:
+          type: boolean
+          description: "다음 페이지가 있는지"
+
+    RequestKey:
+      type: string
+      minLength: 1
+      maxLength: 64
+      description: "UUID 권장(crypto.randomUUID()). 비었거나(공백만 있는 값 포함) 64자 초과면 INVALID_INPUT, 다른 회원의 키이거나 동시 요청이 겹치면 DUPLICATE_REQUEST(409). 같은 회원이 같은 키로 다시 보내면 이전과 같은 결과를 돌려준다. (TRP-01-03·SCH-06-01·PUB-01-03·PUB-07-02·AIT-06-01)"
+      example: "3f8c2a9e-1b47-4c6d-9a0e-5d2f7b8c1e34"
+
+    LocalDate:
+      type: string
+      format: date
+      description: "날짜. 여행 안의 날짜는 여행지 현지 기준, 시간대 변환 없음."
+      example: "2026-11-25"
+
+    LocalDateTime:
+      type: string
+      pattern: '^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,9})?$'
+      description: "기록 시각. 서버 시각, 시간대 오프셋 없음, 소수 초가 붙을 수 있음."
+      example: "2026-11-25T21:15:00"
+
+    HhMm:
+      type: string
+      pattern: '^([01]\d|2[0-3]):[0-5]\d$'
+      description: "방문시간 \"HH:mm\"(24시간, 00:00~23:59). 화면 표시는 12시간제로 화면이 바꾼다 (DateTimeUtil.isValidHhMm)."
+      example: "14:05"
+
+    Id:
+      type: integer
+      format: int64
+      minimum: 1
+      description: "ID (시퀀스 SEQ_테이블명으로 만든 정수)"
+
+  parameters:
+    Page:
+      name: page
+      in: query
+      required: false
+      description: "페이지 번호 (0부터)"
+      schema:
+        type: integer
+        minimum: 0
+        default: 0
+    Size:
+      name: size
+      in: query
+      required: false
+      description: "페이지 크기. 기본값은 기능별 약속"
+      schema:
+        type: integer
+        minimum: 1
+
+  responses:
+    BadRequest:
+      description: "입력값 오류 (공통 INVALID_INPUT). 검증 실패면 fieldErrors에 칸별 문구가 담긴다."
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            INVALID_INPUT:
+              value:
+                success: false
+                data:
+                  code: "INVALID_INPUT"
+                  fieldErrors:
+                    - field: "title"
+                      message: "기능정의서의 칸별 안내 문구"
+                message: "입력값을 확인해 주세요."
+
+    Unauthorized:
+      description: "로그인 필요 (ACC-07-01 LOGIN_REQUIRED). pjh/security 이후 적용 — 그 전에는 Boot 기본 보안이 본문 없이 401을 준다."
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            LOGIN_REQUIRED:
+              value:
+                success: false
+                data:
+                  code: "LOGIN_REQUIRED"
+                  fieldErrors: []
+                message: "로그인이 필요해요."
+
+    Forbidden:
+      description: "권한 없음 (ACC-07-01·02·03). pjh/security 이후 적용."
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            COMMUNITY_RESTRICTED:
+              value:
+                success: false
+                data:
+                  code: "COMMUNITY_RESTRICTED"
+                  fieldErrors: []
+                message: "이용 제한 중에는 커뮤니티 활동을 할 수 없어요."
+            ACCOUNT_UNAVAILABLE:
+              value:
+                success: false
+                data:
+                  code: "ACCOUNT_UNAVAILABLE"
+                  fieldErrors: []
+                message: "이용할 수 없는 계정이에요."
+            EDIT_PERMISSION_CHANGED:
+              value:
+                success: false
+                data:
+                  code: "EDIT_PERMISSION_CHANGED"
+                  fieldErrors: []
+                message: "편집 권한이 변경됐어요. 최신 상태를 확인해 주세요."
+            ADMIN_ONLY:
+              value:
+                success: false
+                data:
+                  code: "ADMIN_ONLY"
+                  fieldErrors: []
+                message: "관리자만 사용할 수 있어요."
+            ADMIN_REAUTH_REQUIRED:
+              value:
+                success: false
+                data:
+                  code: "ADMIN_REAUTH_REQUIRED"
+                  fieldErrors: []
+                message: "보안을 위해 본인 확인을 다시 진행해 주세요."
+
+    NotFound:
+      description: "없거나 볼 수 없는 자료(ACC-07-02 RESOURCE_NOT_ACCESSIBLE), 없는 주소(공통 API_NOT_FOUND)."
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            RESOURCE_NOT_ACCESSIBLE:
+              value:
+                success: false
+                data:
+                  code: "RESOURCE_NOT_ACCESSIBLE"
+                  fieldErrors: []
+                message: "이미 삭제되었거나 볼 수 없는 내용이에요."
+            API_NOT_FOUND:
+              value:
+                success: false
+                data:
+                  code: "API_NOT_FOUND"
+                  fieldErrors: []
+                message: "요청을 처리하지 못했어요. 잠시 후 다시 시도해 주세요."
+
+    MethodNotAllowed:
+      description: "지원하지 않는 HTTP 메서드 (공통 METHOD_NOT_ALLOWED)."
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            METHOD_NOT_ALLOWED:
+              value:
+                success: false
+                data:
+                  code: "METHOD_NOT_ALLOWED"
+                  fieldErrors: []
+                message: "요청을 처리하지 못했어요. 잠시 후 다시 시도해 주세요."
+
+    Conflict:
+      description: "같은 요청 두 번 처리 (공통 DUPLICATE_REQUEST, TRP-01-03·SCH-06-01·PUB-01-03·PUB-07-02·AIT-06-01)."
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            DUPLICATE_REQUEST:
+              value:
+                success: false
+                data:
+                  code: "DUPLICATE_REQUEST"
+                  fieldErrors: []
+                message: "이미 처리된 요청이에요."
+
+    InternalServerError:
+      description: "서버 오류 (공통 INTERNAL_SERVER_ERROR)."
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            INTERNAL_SERVER_ERROR:
+              value:
+                success: false
+                data:
+                  code: "INTERNAL_SERVER_ERROR"
+                  fieldErrors: []
+                message: "요청을 처리하지 못했어요. 잠시 후 다시 시도해 주세요."
