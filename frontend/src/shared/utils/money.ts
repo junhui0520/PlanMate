@@ -5,21 +5,19 @@
 
 // 원·엔은 소수 0자리
 const NO_DECIMAL = new Intl.NumberFormat('ko-KR', { maximumFractionDigits: 0 });
+// 달러·유로는 소수 2자리 고정
+const TWO_DECIMALS = new Intl.NumberFormat('ko-KR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 /**
- * KRW -> "1,500원", JPY -> "¥210", USD·EUR -> 소수 2자리, 그 밖 -> Intl 기본 형식.
- * 원·엔 외 통화 기호는 D 파트 확인 전까지 임시(Intl ko-KR 기본).
+ * KRW -> "1,500원", JPY -> "¥210", USD -> "$12.50", EUR -> "€12.50", 그 밖 -> Intl 기본 형식.
+ * 달러·유로 기호는 D 파트 확인(11/26).
  */
 export function formatMoney(amount: number, currency: string): string {
   if (currency === 'KRW') return `${NO_DECIMAL.format(amount)}원`;
   if (currency === 'JPY') return `¥${NO_DECIMAL.format(amount)}`;
   if (currency === 'USD' || currency === 'EUR') {
-    return new Intl.NumberFormat('ko-KR', {
-      style: 'currency',
-      currency,
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    }).format(amount);
+    const symbol = currency === 'USD' ? '$' : '€';
+    return `${symbol}${TWO_DECIMALS.format(amount)}`;
   }
   return new Intl.NumberFormat('ko-KR', { style: 'currency', currency }).format(amount);
 }
