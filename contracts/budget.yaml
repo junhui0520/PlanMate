@@ -7,6 +7,8 @@ info:
     예상 경비·환율 API 약속. 기준: 세부기능정의서 v33 BUD-01~04, DB설계서 v7 BUDGET_ITEM.
     - 응답·오류 모양은 `./common.yaml`을 따른다(ApiResponse, ErrorResponse, 공통 응답들).
     - 지금 있는 API: BUD-01-01 경비 목록. 다른 기능은 만들 때 이 파일에 더한다.
+    - BUD-03 합계(BudgetSummaryResponse)는 응답 모양만 정해 두었다. 주소(GET /api/trips/{tripId}/budget-summary 예정)는
+      여행 인원(B의 TripService)과 로그인(A의 pjh/security)이 생긴 뒤 연다.
     - 여행 인원·참여자 닉네임·내 역할·여행 통화는 경비 API가 주지 않는다(A·B 파트 데이터).
 
 servers:
@@ -103,3 +105,79 @@ components:
           amountSource: MANUAL
           memo: "3박, 조식 포함"
           createdBy: 1
+
+    # ---- BUD-03 경비 합계 (계산은 서버에서만) ----
+    BudgetSummaryResponse:
+      type: object
+      description: "BUD-03-01 공통 경비 합계 + BUD-03-03 내 1인 경비 (+ BUD-03-04 부분 합계, BUD-04-02 원화 합산)"
+      required: [tripId, commonTotal, myShare]
+      properties:
+        tripId:
+          $ref: './common.yaml#/components/schemas/Id'
+        commonTotal:
+          $ref: '#/components/schemas/BudgetTotal'
+        myShare:
+          $ref: '#/components/schemas/MyShareTotal'
+
+    CurrencyAmount:
+      type: object
+      description: "통화 하나의 합계. 통화 표준 자릿수로 마지막에 한 번 반올림(엔·원 0자리, 달러·유로 2자리)"
+      required: [currency, amount]
+      properties:
+        currency:
+          type: string
+          example: JPY
+        amount:
+          type: number
+          example: 41600
+
+    ExcludedItem:
+      type: object
+      description: "BUD-03-04 계산에서 빠진 항목. PRICE_UNKNOWN은 통화별·원화 합산 모두, NO_RATE는 원화 합산에서만 빠짐"
+      required: [itemId, name, reason]
+      properties:
+        itemId:
+          $ref: './common.yaml#/components/schemas/Id'
+        name:
+          type: string
+          example: 입장권
+        reason:
+          type: string
+          enum: [PRICE_UNKNOWN, NO_RATE]
+
+    BudgetTotal:
+      type: object
+      required: [krwTotal, byCurrency, excluded]
+      properties:
+        krwTotal:
+          type: integer
+          format: int64
+          description: "원화 합산(원 단위, 마지막에 한 번 반올림). 환율 없는 통화는 빠짐"
+          example: 498560
+        byCurrency:
+          type: array
+          description: "통화별 합계 (원화는 맨 뒤)"
+          items:
+            $ref: '#/components/schemas/CurrencyAmount'
+        excluded:
+          type: array
+          items:
+            $ref: '#/components/schemas/ExcludedItem'
+
+    MyShareTotal:
+      description: "BUD-03-03 내 1인 경비 = 공통 경비 합계 / 여행 인원 + 내 개인 경비 (통화별)"
+      allOf:
+        - $ref: '#/components/schemas/BudgetTotal'
+        - type: object
+          required: [commonShare, personal]
+          properties:
+            commonShare:
+              type: array
+              description: "공통 경비 몫 (공통 경비 합계 / 여행 인원)"
+              items:
+                $ref: '#/components/schemas/CurrencyAmount'
+            personal:
+              type: array
+              description: "내 개인 경비 합계"
+              items:
+                $ref: '#/components/schemas/CurrencyAmount'

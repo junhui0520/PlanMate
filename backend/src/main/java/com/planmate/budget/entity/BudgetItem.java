@@ -88,4 +88,21 @@ public class BudgetItem {
 	@Column(name = "CREATED_BY")
 	private Long createdBy;
 
+	/** 새 경비 항목 (항목 ID는 저장할 때 SEQ_BUDGET_ITEM으로 채워짐). BUD-01-02 추가에서 쓴다 */
+	public static BudgetItem create(Long tripId, Scope scope, Category category, String name, CalcType calcType,
+			BigDecimal amount, String currency, AmountSource amountSource, String memo, Long createdBy) {
+		BudgetItem item = new BudgetItem();
+		item.tripId = tripId;
+		item.scope = scope;
+		item.category = category;
+		item.name = name;
+		item.calcType = calcType;
+		item.amount = amount;
+		item.currency = currency;
+		item.amountSource = amountSource;
+		item.memo = memo;
+		item.createdBy = createdBy;
+		return item;
+	}
+
 }
