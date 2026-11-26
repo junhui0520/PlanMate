@@ -119,6 +119,23 @@ public class BudgetService {
 		budgetItemRepository.delete(findEditableItem(tripId, itemId, memberId, canEdit));
 	}
 
+	/**
+	 * BUD-02-03 펼친 칸에서 메모 작성·수정·삭제 (공통 경비만, 비우면 삭제).
+	 * 규칙은 BUD-01-02 메모와 같다: 0~200자, 앞뒤 공백 제거, 제어문자 불가. 동시 수정은 나중 값으로 덮어씀.
+	 * 정한 내용(11/26): 권한 없음은 BUD-01-04 문구 "이 경비를 고칠 권한이 없어요."를 같이 쓴다.
+	 * TODO(A에 요청): memberId·canEdit은 로그인 정보·TripAccessChecker. 메모 주소(PATCH .../memo)는 그때 연다.
+	 * TODO(B에 요청): 저장 후 다른 참여자 화면 반영은 SyncService (COL-06-01)
+	 */
+	@Transactional
+	public BudgetItemResponse updateBudgetMemo(Long tripId, Long itemId, Long memberId, boolean canEdit, String memo) {
+		BudgetItem item = findEditableItem(tripId, itemId, memberId, canEdit);
+		if (item.getScope() != Scope.COMMON) {
+			throw new BusinessException(ErrorCode.INVALID_INPUT); // 개인 경비 항목에는 메모 아이콘 없음
+		}
+		item.updateMemo(checkMemo(true, memo));
+		return BudgetItemResponse.from(item);
+	}
+
 	// BUD-01-04 없거나 다른 여행의 항목이면 "이미 삭제된 경비예요.",
 	// 공통은 소유자·편집 참여자만, 개인은 주인 본인만(주인이 소유자·편집 참여자일 때) — 아니면 "이 경비를 고칠 권한이 없어요."
 	private BudgetItem findEditableItem(Long tripId, Long itemId, Long memberId, boolean canEdit) {

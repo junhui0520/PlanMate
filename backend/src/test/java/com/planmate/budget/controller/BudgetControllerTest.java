@@ -39,11 +39,11 @@ class BudgetControllerTest {
 	void 경비_목록을_공통_응답_모양으로_돌려준다() throws Exception {
 		given(budgetService.getBudgetItems(1L)).willReturn(List.of(
 				new BudgetItemResponse(2L, Scope.COMMON, Category.LODGING, "숙소", CalcType.TOTAL,
-						new BigDecimal("40000"), "JPY", AmountSource.MANUAL, "3박, 조식 포함", 1L),
+						new BigDecimal("40000"), "JPY", AmountSource.MANUAL, null, null, "3박, 조식 포함", 1L),
 				new BudgetItemResponse(4L, Scope.COMMON, Category.SIGHTSEEING, "입장권", CalcType.TOTAL,
-						null, "JPY", AmountSource.MANUAL, null, 3L),
+						null, "JPY", AmountSource.MANUAL, null, null, null, 3L),
 				new BudgetItemResponse(5L, Scope.PERSONAL, Category.ETC, "기념품", null,
-						new BigDecimal("3000"), "JPY", AmountSource.MANUAL, null, 1L)));
+						new BigDecimal("3000"), "JPY", AmountSource.MANUAL, null, null, null, 1L)));
 
 		mockMvc.perform(get("/api/trips/1/budget-items"))
 				.andExpect(status().isOk())
@@ -54,6 +54,9 @@ class BudgetControllerTest {
 				.andExpect(jsonPath("$.data[0].calcType").value("TOTAL"))
 				.andExpect(jsonPath("$.data[0].amount").value(40000))
 				.andExpect(jsonPath("$.data[0].memo").value("3박, 조식 포함"))
+				// BUD-02-03 계산 근거 칸도 함께 나감 (없으면 null)
+				.andExpect(jsonPath("$.data[0].calcNote").isEmpty())
+				.andExpect(jsonPath("$.data[0].estimateBasis").isEmpty())
 				// 가격 확인 전은 0이 아니라 null
 				.andExpect(jsonPath("$.data[1].amount").isEmpty())
 				// 개인 경비는 계산 방식 없음

@@ -374,4 +374,66 @@ class BudgetServiceTest {
 		verify(repository, never()).delete(any(BudgetItem.class));
 	}
 
+	// ==================== BUD-02-03 펼친 칸 메모 ====================
+
+	@Test
+	void 메모를_쓰면_앞뒤_공백을_지우고_저장한다() {
+		existing(3L, Scope.COMMON, TRIP, OTHER, AmountSource.MANUAL); // 공통 경비는 편집 참여자면 누구 것이든
+
+		BudgetItemResponse r = service.updateBudgetMemo(TRIP, 3L, ME, true, "  3박, 조식 포함 ");
+
+		assertEquals("3박, 조식 포함", r.memo()); // 메모가 생기면 화면 아이콘이 채워짐
+	}
+
+	@Test
+	void 메모를_비우고_저장하면_삭제된다() {
+		BudgetItem item = existing(3L, Scope.COMMON, TRIP, ME, AmountSource.MANUAL);
+		item.updateMemo("예전 메모");
+
+		assertNull(service.updateBudgetMemo(TRIP, 3L, ME, true, "   ").memo()); // 빈 아이콘으로
+		assertNull(service.updateBudgetMemo(TRIP, 3L, ME, true, null).memo());
+	}
+
+	@Test
+	void 메모_200자는_되고_201자와_제어문자는_거절한다() {
+		existing(3L, Scope.COMMON, TRIP, ME, AmountSource.MANUAL);
+
+		assertEquals(200, BudgetService.countChars(service.updateBudgetMemo(TRIP, 3L, ME, true, "가".repeat(199) + "😀").memo()));
+		assertError(ErrorCode.INVALID_INPUT, () -> service.updateBudgetMemo(TRIP, 3L, ME, true, "가".repeat(201)));
+		assertError(ErrorCode.INVALID_INPUT, () -> service.updateBudgetMemo(TRIP, 3L, ME, true, "줄\n바꿈"));
+	}
+
+	@Test
+	void 조회_참여자는_메모를_쓸_수_없다() {
+		existing(3L, Scope.COMMON, TRIP, ME, AmountSource.MANUAL);
+
+		assertError(ErrorCode.BUDGET_EDIT_FORBIDDEN, () -> service.updateBudgetMemo(TRIP, 3L, ME, false, "메모"));
+	}
+
+	@Test
+	void 개인_경비에는_메모를_쓸_수_없다() {
+		existing(5L, Scope.PERSONAL, TRIP, ME, AmountSource.MANUAL);
+
+		assertError(ErrorCode.INVALID_INPUT, () -> service.updateBudgetMemo(TRIP, 5L, ME, true, "메모"));
+	}
+
+	@Test
+	void 메모도_없는_항목이면_이미_삭제된_경비예요() {
+		when(repository.findById(99L)).thenReturn(Optional.empty());
+
+		assertError(ErrorCode.BUDGET_ITEM_NOT_FOUND, () -> service.updateBudgetMemo(TRIP, 99L, ME, true, "메모"));
+	}
+
+	@Test
+	void 교통비_항목도_메모는_쓸_수_있고_근거_칸을_함께_준다() {
+		BudgetItem item = existing(1L, Scope.COMMON, TRIP, ME, AmountSource.ROUTE_FARE);
+		ReflectionTestUtils.setField(item, "calcNote", "¥400 x 4명");
+
+		BudgetItemResponse r = service.updateBudgetMemo(TRIP, 1L, ME, true, "지하철");
+
+		assertEquals(AmountSource.ROUTE_FARE, r.amountSource());
+		assertEquals("¥400 x 4명", r.calcNote());
+		assertNull(r.estimateBasis());
+	}
+
 }

@@ -19,6 +19,11 @@ info:
       - 공통은 소유자·편집 참여자, 개인은 주인 본인만. 아니면 BUDGET_EDIT_FORBIDDEN(403) "이 경비를 고칠 권한이 없어요."
       - 교통비로 반영된 항목(ROUTE_FARE)도 고치거나 지울 수 있고, 고쳐도 amountSource는 그대로다.
         지우면 구간 연결 기록(FARE_EXPENSE_LINK)은 DB가 함께 지운다.
+    - BUD-02-03 펼친 칸 메모도 로그인이 생긴 뒤 연다. 예정 주소와 규칙:
+      - 메모 PATCH /api/trips/{tripId}/budget-items/{itemId}/memo: 요청 {memo: string|null}, 응답은 BudgetItemResponse
+      - 공통 경비만(개인 경비면 INVALID_INPUT), 0~200자·앞뒤 공백 제거·제어문자 불가, 비우면 삭제(memo null)
+      - 소유자·편집 참여자만. 아니면 BUDGET_EDIT_FORBIDDEN(403), 없으면 BUDGET_ITEM_NOT_FOUND(404)
+      - 교통비 항목의 출처·확인 시점은 C 파트(FareService) 데이터라 아직 응답에 없다. TODO(C와 응답 모양 맞추기)
     - 여행 인원·참여자 닉네임·내 역할·여행 통화는 경비 API가 주지 않는다(A·B 파트 데이터).
 
 servers:
@@ -68,7 +73,7 @@ components:
     BudgetItemResponse:
       type: object
       description: "경비 항목 한 줄 (BUDGET_ITEM)"
-      required: [itemId, scope, category, name, calcType, amount, currency, amountSource, memo, createdBy]
+      required: [itemId, scope, category, name, calcType, amount, currency, amountSource, calcNote, estimateBasis, memo, createdBy]
       properties:
         itemId:
           $ref: './common.yaml#/components/schemas/Id'
@@ -97,6 +102,12 @@ components:
           type: string
           description: "금액 입력 방식 (직접 입력 / 예산 기준 계산 / 교통비 반영)"
           enum: [MANUAL, BUDGET_RULE, ROUTE_FARE]
+        calcNote:
+          type: [string, "null"]
+          description: "BUD-02-03 금액 계산 설명 (CALC_NOTE). 없으면 null"
+        estimateBasis:
+          type: [string, "null"]
+          description: "BUD-02-03 자동 계산 기준값 (ESTIMATE_BASIS, 예산 기준 계산 항목). 없으면 null"
         memo:
           type: [string, "null"]
           description: "메모 0~200자 (공통 경비만)"
@@ -113,6 +124,8 @@ components:
           amount: 40000
           currency: JPY
           amountSource: MANUAL
+          calcNote: null
+          estimateBasis: null
           memo: "3박, 조식 포함"
           createdBy: 1
 

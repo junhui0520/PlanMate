@@ -119,4 +119,9 @@ public class BudgetItem {
 		this.memo = memo;
 	}
 
+	/** BUD-02-03 펼친 칸에서 메모만 작성·수정·삭제(null이면 삭제). 나중에 저장한 값으로 덮어쓴다 */
+	public void updateMemo(String memo) {
+		this.memo = memo;
+	}
+
 }
