@@ -11,7 +11,9 @@ import type {
   BudgetTotal,
   CurrencyAmount,
 } from '../api/budgetApi.ts'
-import { formatCurrencyAmounts, formatMoney, roundToCurrency } from '../utils/money.ts'
+import { Button } from '../../../shared/components/Button'
+import { formatMoney } from '../../../shared/utils/money'
+import { formatCurrencyAmounts, roundToCurrency } from '../utils/money.ts'
 import { CommonTotal } from './BudgetSummary.tsx'
 
 // BUD-01-01 개인 경비 카드 머리의 통화별 합계. 예: ¥3,000 + 52,000원 (원화는 맨 뒤)
@@ -108,9 +110,9 @@ function CommonSection({
         </h2>
         {/* BUD-01-02 공통 경비 추가 (소유자·편집 참여자만) */}
         {canEdit && (
-          <button type="button" className="budget-outline-button" onClick={onAdd}>
+          <Button variant="secondary" onClick={onAdd}>
             공통 경비 추가
-          </button>
+          </Button>
         )}
       </div>
 
@@ -318,17 +320,5 @@ export default function BudgetList({
       />
       <PersonalSection data={data} myPersonal={myPersonal} onAdd={() => onAdd('PERSONAL')} />
     </>
-  )
-}
-
-// BUD-01-01 불러오는 중: 목록 자리에 빈 카드 3개(스켈레톤), 스피너 없음
-// TODO(공통): shared/components/Loading.tsx가 생기면 그쪽으로 옮긴다.
-export function BudgetListSkeleton() {
-  return (
-    <div className="budget-skeleton" aria-label="불러오는 중">
-      {[0, 1, 2].map((i) => (
-        <div key={i} className="budget-skeleton__card" />
-      ))}
-    </div>
   )
 }

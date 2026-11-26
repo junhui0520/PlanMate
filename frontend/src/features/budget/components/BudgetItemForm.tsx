@@ -1,5 +1,10 @@
 // BUD-01-02 경비 항목 추가 창 (와이어프레임 D-12). 수정(BUD-01-04)도 나중에 같은 창을 쓴다.
 import { useEffect, useRef, useState } from 'react'
+import { Button } from '../../../shared/components/Button'
+import { Input } from '../../../shared/components/Input'
+import { Modal } from '../../../shared/components/Modal'
+import { formatMoney } from '../../../shared/utils/money'
+import { isBlank, replaceControlChars } from '../../../shared/utils/validation'
 import {
   addBudgetItem,
   getExchangeRate,
@@ -10,7 +15,6 @@ import {
 import {
   currencyUnitName,
   formatAmountInput,
-  formatMoney,
   MAX_AMOUNT_KRW,
   parseAmountInput,
   roundToCurrency,
@@ -27,16 +31,9 @@ const CATEGORIES: { key: BudgetCategory; label: string }[] = [
 // BUD-01-02 통화 선택 목록 (환율 API가 지원하는 통화)
 const CURRENCIES = ['KRW', 'JPY', 'USD', 'EUR']
 
-const NAME_MAX = 50 // BUD-01-02 항목명 1~50자
-const MEMO_MAX = 200 // BUD-01-02 메모 0~200자
-
-// BUD-01-02 제어문자 불가 (TRP-01-01 규칙과 동일): 입력할 때 지움
-function stripControl(text: string): string {
-  return [...text].filter((ch) => {
-    const code = ch.charCodeAt(0)
-    return code >= 0x20 && code !== 0x7f
-  }).join('')
-}
+// BUD-01-02 글자 수는 공통 Input이 countChars(이모지 1자)로 세고, 넘으면 더 입력되지 않음 (maxLength 속성 안 씀)
+const NAME_MAX = 50 // 항목명 1~50자
+const MEMO_MAX = 200 // 메모 0~200자
 
 type FieldErrors = { name?: string; amount?: string }
 
@@ -69,7 +66,6 @@ export default function BudgetItemForm({
   const [errors, setErrors] = useState<FieldErrors>({})
   const [saving, setSaving] = useState(false)
   const savingRef = useRef(false) // 같은 요청 다시 보내지 않음
-  const nameRef = useRef<HTMLInputElement>(null)
 
   const overLimit = (amount: number, rate: number | null) => rate !== null && amount * rate > MAX_AMOUNT_KRW
 
@@ -90,10 +86,6 @@ export default function BudgetItemForm({
   }, [currency])
   const perOne = rates[currency] ?? null
 
-  useEffect(() => {
-    nameRef.current?.focus()
-  }, [])
-
   // 금액 칸: 천 단위 쉼표 자동, 통화 자릿수까지만.
   // 원화 1억을 넘게 "늘리는" 입력은 막고, 줄이거나 지우는 입력은 항상 됨(1억이 넘은 금액도 고칠 수 있게)
   const onAmountChange = (text: string) => {
@@ -113,14 +105,13 @@ export default function BudgetItemForm({
 
   const amount = priceUnknown ? null : parseAmountInput(amountText)
   const amountOverLimit = amount !== null && overLimit(amount, perOne) // 가격 확인 전이면 해당 없음
-  const canSave = category !== null && (!isCommon || calcType !== null) && !amountOverLimit && !saving
+  const canSave = category !== null && (!isCommon || calcType !== null) && !amountOverLimit
 
   const save = async () => {
     if (savingRef.current || !canSave) return
     // 칸 아래 오류 (기능정의서 문구 그대로)
-    const trimmedName = name.trim()
     const nextErrors: FieldErrors = {}
-    if (trimmedName === '') nextErrors.name = '항목명을 입력해 주세요.'
+    if (isBlank(name)) nextErrors.name = '항목명을 입력해 주세요.'
     if (!priceUnknown && amount === null) nextErrors.amount = "금액을 입력하거나 '가격 확인 전'을 선택해 주세요."
     else if (amount !== null && amount < 0) nextErrors.amount = '0 이상으로 입력해 주세요.'
     setErrors(nextErrors)
@@ -132,15 +123,15 @@ export default function BudgetItemForm({
       await addBudgetItem(tripId, {
         scope,
         category: category as BudgetCategory,
-        name: trimmedName,
+        name: name.trim(), // 앞뒤 공백 제거
         calcType: isCommon ? calcType : null,
         amount: amount === null ? null : roundToCurrency(amount, currency),
         currency,
-        memo: isCommon && memo.trim() !== '' ? memo.trim() : null,
+        memo: isCommon && !isBlank(memo) ? memo.trim() : null,
       })
       onSaved() // 성공: 창이 닫히고 목록에 추가 (별도 안내 없음)
     } catch (e) {
-      // 개수 초과·권한 없음 등은 화면 아래 상태 창으로
+      // 개수 초과·권한 없음 등은 화면 아래 상태 창으로 (서버 문구 그대로)
       onServerError(e instanceof Error ? e.message : '')
       savingRef.current = false
       setSaving(false)
@@ -154,20 +145,26 @@ export default function BudgetItemForm({
       : null
 
   return (
-    // TODO(공통): shared/components/Modal.tsx가 생기면 바꾼다.
-    <div className="budget-modal__backdrop">
-      <div className="budget-modal" role="dialog" aria-modal="true" aria-labelledby="budget-form-title">
+    // 공통 Modal은 제목 옆 닫기 버튼이 없어서, D-12 "닫기는 X([취소] 없음)"에 맞게 제목과 X를 안쪽에 직접 둠
+    <Modal
+      open
+      footer={
+        // 창 버튼은 [저장]만 ([취소] 없음). 처리 중이면 비활성 + "저장 중..."
+        <Button disabled={!canSave} loading={saving} loadingText="저장 중..." onClick={save}>
+          저장
+        </Button>
+      }
+    >
+      <div className="budget-form">
         <header className="budget-modal__head">
-          <h2 id="budget-form-title" className="budget-modal__title">
-            {isCommon ? '공통 경비 추가' : '개인 경비 추가'}
-          </h2>
+          <h2 className="budget-modal__title">{isCommon ? '공통 경비 추가' : '개인 경비 추가'}</h2>
           <button type="button" className="budget-modal__close" aria-label="닫기" onClick={onClose}>
             ×
           </button>
         </header>
 
         <div className="budget-form__field">
-          <span className="budget-form__label">분류</span>
+          <span className="pm-field__label">분류</span>
           <div className="budget-form__choices">
             {CATEGORIES.map((c) => (
               <button
@@ -183,29 +180,23 @@ export default function BudgetItemForm({
           </div>
         </div>
 
-        <label className="budget-form__field">
-          <span className="budget-form__label">항목명</span>
-          <input
-            ref={nameRef}
-            className="budget-form__input"
+        <div className="budget-form__field">
+          <Input
+            label="항목명"
             value={name}
-            maxLength={NAME_MAX}
-            onChange={(e) => {
-              setName(stripControl(e.target.value).slice(0, NAME_MAX))
-              setErrors((v) => ({ ...v, name: undefined }))
+            maxChars={NAME_MAX}
+            showCount
+            error={errors.name}
+            onValueChange={(v) => {
+              setName(replaceControlChars(v)) // 제어문자는 공백 1칸으로 (공통 규칙)
+              setErrors((e) => ({ ...e, name: undefined }))
             }}
           />
-          <span className="budget-form__foot">
-            <span className="budget-form__error">{errors.name}</span>
-            <span>
-              {name.length}/{NAME_MAX}
-            </span>
-          </span>
-        </label>
+        </div>
 
         {isCommon && (
           <div className="budget-form__field">
-            <span className="budget-form__label">계산 방식</span>
+            <span className="pm-field__label">계산 방식</span>
             <div className="budget-form__choices">
               {(
                 [
@@ -228,15 +219,16 @@ export default function BudgetItemForm({
         )}
 
         <div className="budget-form__field">
-          <span className="budget-form__label">금액</span>
+          <span className="pm-field__label">금액</span>
           {/* TODO(D): BUD-02-01 "인원 / 일수로 계산" (D-13) */}
           <div className="budget-form__amount-row">
             {/* 칸 안 오른쪽에 지금 통화 단위를 보여 줘서 원·엔을 헷갈리지 않게 함 (예: "30,000 엔") */}
             <span className="budget-form__amount-input">
               <input
-                className="budget-form__input"
+                className="pm-field__input"
                 inputMode="decimal"
                 aria-label="금액"
+                aria-invalid={errors.amount ? true : undefined}
                 value={priceUnknown ? '' : amountText}
                 disabled={priceUnknown}
                 onChange={(e) => onAmountChange(e.target.value)}
@@ -246,7 +238,7 @@ export default function BudgetItemForm({
               </span>
             </span>
             <select
-              className="budget-form__select"
+              className="pm-field__input"
               aria-label="통화"
               value={currency}
               onChange={(e) => onCurrencyChange(e.target.value)}
@@ -258,8 +250,8 @@ export default function BudgetItemForm({
               ))}
             </select>
           </div>
-          {perPersonPreview && <span className="budget-form__hint">{perPersonPreview}</span>}
-          {errors.amount && <span className="budget-form__error">{errors.amount}</span>}
+          {perPersonPreview && <p className="pm-field__hint">{perPersonPreview}</p>}
+          {errors.amount && <p className="pm-field__error">{errors.amount}</p>}
           <label className="budget-form__check">
             <input
               type="checkbox"
@@ -274,30 +266,17 @@ export default function BudgetItemForm({
         </div>
 
         {isCommon && (
-          <label className="budget-form__field">
-            <span className="budget-form__label">메모 (선택)</span>
-            <input
-              className="budget-form__input"
+          <div className="budget-form__field">
+            <Input
+              label="메모 (선택)"
               value={memo}
-              maxLength={MEMO_MAX}
-              onChange={(e) => setMemo(stripControl(e.target.value).slice(0, MEMO_MAX))}
+              maxChars={MEMO_MAX}
+              showCount
+              onValueChange={(v) => setMemo(replaceControlChars(v))}
             />
-            <span className="budget-form__foot">
-              <span />
-              <span>
-                {memo.length}/{MEMO_MAX}
-              </span>
-            </span>
-          </label>
+          </div>
         )}
-
-        <div className="budget-modal__actions">
-          {/* 창 버튼은 [저장]만 ([취소] 없음) */}
-          <button type="button" className="budget-primary-button" disabled={!canSave} onClick={save}>
-            {saving ? '저장 중...' : '저장'}
-          </button>
-        </div>
       </div>
-    </div>
+    </Modal>
   )
 }
