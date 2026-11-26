@@ -39,6 +39,13 @@ public enum ErrorCode {
     // ===== C 파트 (place·ai·route) =====
 
     // ===== D 파트 (community·budget) =====
+    // BUD-01-02 경비 항목 추가 (기능정의서 '예외·오류 안내 문구' 그대로)
+    BUDGET_NAME_REQUIRED(HttpStatus.BAD_REQUEST, "항목명을 입력해 주세요."),
+    BUDGET_AMOUNT_REQUIRED(HttpStatus.BAD_REQUEST, "금액을 입력하거나 '가격 확인 전'을 선택해 주세요."),
+    BUDGET_AMOUNT_NEGATIVE(HttpStatus.BAD_REQUEST, "0 이상으로 입력해 주세요."),
+    BUDGET_COMMON_LIMIT(HttpStatus.CONFLICT, "공통 경비는 최대 200개까지 추가할 수 있어요."),
+    BUDGET_PERSONAL_LIMIT(HttpStatus.CONFLICT, "개인 경비는 최대 200개까지 추가할 수 있어요."),
+    BUDGET_COMMON_EDIT_FORBIDDEN(HttpStatus.FORBIDDEN, "공통 경비는 편집 권한이 있어야 추가할 수 있어요."),
 
     ;
 
