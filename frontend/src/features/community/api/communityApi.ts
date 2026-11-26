@@ -4,7 +4,7 @@
 //          1) 각 함수 안쪽을 shared/api/client.ts 호출로 바꾸고
 //          2) mockData.ts를 지운다. (화면 파일은 고치지 않아도 됨)
 import type { PageResponse } from '../../../shared/api/client'
-import { mockGetPublicPosts } from '../mockData.ts'
+import { mockGetCityOptions, mockGetPublicPosts } from '../mockData.ts'
 
 // 정렬: 최신순 / 좋아요순 (PUB-03-03)
 export type PostSort = 'LATEST' | 'LIKES'
@@ -38,4 +38,22 @@ export const POST_PAGE_SIZE = 10 // PUB-03-01 한 번에 10개
 /** PUB-03-01 공개 여행 목록 (비회원 가능): GET /api/community/posts */
 export function getPublicPosts(query: PostListQuery): Promise<PageResponse<PostListItem>> {
   return mockGetPublicPosts(query)
+}
+
+// ---- PUB-03-02 검색 조건 ----
+
+export const SEARCH_KEYWORD_MAX = 50 // 제목 검색어 0~50자
+export const SEARCH_DAYS_MAX = 7 // 일수 1~7일
+
+export interface CityOption {
+  cityId: number
+  name: string
+}
+
+/**
+ * PUB-03-02 도시 선택 목록: 서비스에 등록된 모든 도시.
+ * TODO(B에 요청): 등록된 모든 도시를 돌려주는 API(CITY 전체 목록)가 아직 없다. 생기면 그 API를 부른다.
+ */
+export function getCityOptions(): Promise<CityOption[]> {
+  return mockGetCityOptions()
 }

@@ -4,9 +4,10 @@
 // 미리보기에서 상태 바꿔 보기: 주소 끝에
 //   ?mock=loading | empty | error   (목록 전체)
 //   ?mock=more-error                (첫 10개는 오고, 다음 10개 불러오기만 실패)
+//   (검색 조건 sort·q·cityId·days도 주소에 남으니 그 뒤에 &mock=... 로 붙여도 됨)
 // 서버가 할 일(공개 게시물만, 정렬, 마지막 게시물 기준 이어 받기)을 이 파일이 흉내 낸다.
 import type { PageResponse } from '../../shared/api/client'
-import { POST_PAGE_SIZE, type PostListItem, type PostListQuery } from './api/communityApi.ts'
+import { POST_PAGE_SIZE, type CityOption, type PostListItem, type PostListQuery } from './api/communityApi.ts'
 
 interface MockPost extends PostListItem {
   cityId: number
@@ -108,4 +109,10 @@ export async function mockGetPublicPosts(query: PostListQuery): Promise<PageResp
     totalPages: Math.ceil(matched.length / POST_PAGE_SIZE),
     hasNext: start + POST_PAGE_SIZE < matched.length,
   }
+}
+
+// PUB-03-02 등록된 모든 도시 (가나다순)
+export async function mockGetCityOptions(): Promise<CityOption[]> {
+  await wait(200)
+  return CITIES.map((c) => ({ cityId: c.cityId, name: c.name })).sort((a, b) => a.name.localeCompare(b.name, 'ko'))
 }

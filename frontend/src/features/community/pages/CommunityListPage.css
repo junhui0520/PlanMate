@@ -11,6 +11,46 @@
   font-weight: var(--font-weight-bold);
 }
 
+/* ---- PUB-03-02 검색 영역 (PostSearchBar) ---- */
+.post-search {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.post-search__select {
+  width: 200px;
+  flex: none;
+}
+
+.post-search__keyword {
+  width: 360px;
+}
+
+.post-search__reset {
+  margin-left: var(--space-2);
+  text-decoration: underline;
+}
+
+/* ---- "검색 결과 n개" + PUB-03-03 정렬 ---- */
+.community-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: var(--space-5) 0 var(--space-4);
+}
+
+.community-toolbar__count {
+  margin: 0;
+  font-size: var(--font-size-sm);
+  color: var(--color-text-sub);
+}
+
+.community-sort {
+  display: flex;
+  gap: var(--space-2);
+}
+
 /* 카드 3개씩 한 줄 */
 .community-grid {
   display: grid;
