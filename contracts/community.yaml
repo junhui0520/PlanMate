@@ -44,6 +44,7 @@ paths:
           서버는 그 게시물의 정렬 값(처음 게시 시각·좋아요 수) 다음부터 이어서 준다.
           그 사이 새 게시물이 생겨도 같은 카드가 두 번 나오지 않는다(PUB-03-01).
         - 첫 10개(처음·검색·정렬 바꿈·초기화)는 `after` 없이 부른다.
+        - `after`로 보낸 게시물이 없으면(영구 삭제 등) 400 INVALID_INPUT. 처음부터 다시 주면 같은 카드가 겹칠 수 있어서다.
         - `page`는 화면이 몇 번째로 불렀는지(0부터) 보내는 값이고, 서버는 응답에 그대로 돌려준다(위치 계산에는 쓰지 않음).
         - `totalElements`는 지금 조건에 맞는 전체 게시물 수다. 화면 "검색 결과 n개"에 쓴다.
         - 정렬: LATEST(최신순) = 처음 게시 시각(PUBLISHED_AT) 늦은 순, 제목·소개를 고쳐도 순서 그대로.
@@ -88,7 +89,7 @@ paths:
         - name: after
           in: query
           required: false
-          description: "지금까지 받은 마지막 카드의 postId. 없으면 첫 10개"
+          description: "지금까지 받은 마지막 카드의 postId. 없으면 첫 10개. 없는 게시물이면 400 INVALID_INPUT"
           schema:
             $ref: './common.yaml#/components/schemas/Id'
         - name: page
