@@ -259,6 +259,105 @@ a {
   background: var(--color-bg-sub);
 }
 
+/* ===== 공통 틀 (app/layouts, Figma: GNB 높이 60, 본문 가운데 정렬 최대 폭 1280, 좌측 메뉴 폭 220) ===== */
+.pm-layout {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+
+.pm-layout__body {
+  display: flex;
+  flex: 1;
+  width: 100%;
+  max-width: var(--layout-max-width);
+  margin: 0 auto;
+}
+
+.pm-layout__content {
+  flex: 1;
+  min-width: 0;
+  padding: var(--space-6) var(--space-7);
+}
+
+/* GNB: 아래쪽 테두리, 고정(sticky)하지 않음 */
+.pm-gnb {
+  height: var(--gnb-height);
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-bg);
+}
+
+.pm-gnb__inner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 100%;
+  max-width: var(--layout-max-width);
+  margin: 0 auto;
+  padding: 0 var(--space-7);
+}
+
+.pm-gnb__nav {
+  display: flex;
+  align-items: center;
+  gap: var(--space-6);
+}
+
+/* LOGO: 회색 박스 + 굵은 글자 (로고 이미지는 디자인 병합 때) */
+.pm-gnb__logo {
+  display: inline-flex;
+  align-items: center;
+  padding: var(--space-1) var(--space-3);
+  border-radius: var(--radius-sm);
+  background: var(--color-disabled-bg);
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-bold);
+}
+
+.pm-gnb__link {
+  font-size: var(--font-size-md);
+  color: var(--color-text);
+}
+
+.pm-gnb__link.is-active {
+  font-weight: var(--font-weight-bold);
+}
+
+.pm-gnb__right {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+}
+
+/* 좌측 메뉴: 오른쪽 테두리, 제목 굵게, 항목은 세로 목록 */
+.pm-side-menu {
+  display: flex;
+  flex: 0 0 var(--side-menu-width);
+  flex-direction: column;
+  gap: var(--space-1);
+  width: var(--side-menu-width);
+  padding: var(--space-6) var(--space-4);
+  border-right: 1px solid var(--color-border);
+}
+
+.pm-side-menu__title {
+  padding: 0 var(--space-3) var(--space-3);
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-bold);
+}
+
+.pm-side-menu__link {
+  display: block;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  font-size: var(--font-size-md);
+  color: var(--color-text);
+}
+
+.pm-side-menu__link.is-active {
+  font-weight: var(--font-weight-bold);
+}
+
 /* ===== 빈 상태 (EmptyState.tsx) ===== */
 .pm-empty {
   display: flex;
