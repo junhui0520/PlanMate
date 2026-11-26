@@ -38,6 +38,11 @@ const CATEGORY_TABS: { key: BudgetCategory | 'ALL'; label: string }[] = [
   { key: 'ETC', label: '기타' },
 ]
 
+// 분류 이름 (개인 경비 카드 항목 옆 표시용)
+const CATEGORY_LABEL = Object.fromEntries(
+  CATEGORY_TABS.filter((t) => t.key !== 'ALL').map((t) => [t.key, t.label]),
+) as Record<BudgetCategory, string>
+
 // 와이어프레임 D-11 배지: 자동으로 들어온 금액이면 출처 표시 (직접 입력은 표시 없음)
 const SOURCE_BADGE: Partial<Record<AmountSource, string>> = {
   BUDGET_RULE: '예산 기준',
@@ -204,7 +209,14 @@ function PersonalCard({
       <ul className="budget-card__list">
         {shown.map((item) => (
           <li key={item.itemId} className="budget-card__item">
-            <span>{item.name}</span>
+            {/* 사용자 요청으로 추가(기능정의서·피그마에 없음): 이름 옆 작은 회색 분류.
+                이름이 길면 이름만 …로 줄고 분류는 잘리지 않음 */}
+            <span className="budget-card__item-name">
+              <span className="budget-card__item-text" title={item.name}>
+                {item.name}
+              </span>
+              <span className="budget-card__item-category">{CATEGORY_LABEL[item.category]}</span>
+            </span>
             <span className="budget-card__amount">
               {item.amount === null ? (
                 <span className="budget-unknown">가격 확인 전</span>
