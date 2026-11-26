@@ -2,7 +2,12 @@ package com.planmate.budget.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
@@ -22,6 +27,10 @@ import com.planmate.budget.entity.BudgetItem.CalcType;
 import com.planmate.budget.entity.BudgetItem.Category;
 import com.planmate.budget.entity.BudgetItem.Scope;
 import com.planmate.budget.repository.BudgetItemRepository;
+import com.planmate.common.exception.BusinessException;
+import com.planmate.common.exception.ErrorCode;
+import com.planmate.common.security.AccountStatusChecker;
+import com.planmate.common.security.TripAccessChecker;
 
 /**
  * BUD-03-01·03·04, BUD-04-02 경비 합계 계산 확인 (DB 없이 계산만).
@@ -29,8 +38,11 @@ import com.planmate.budget.repository.BudgetItemRepository;
  */
 class BudgetSummaryServiceTest {
 
+	private final BudgetItemRepository repository = mock(BudgetItemRepository.class);
+	private final AccountStatusChecker account = mock(AccountStatusChecker.class); // 가짜 체커
+	private final TripAccessChecker tripAccess = mock(TripAccessChecker.class);
 	private final BudgetSummaryService service =
-			new BudgetSummaryService(mock(BudgetItemRepository.class), mock(ExchangeRateService.class));
+			new BudgetSummaryService(repository, mock(ExchangeRateService.class), account, tripAccess);
 
 	private static final Map<String, BigDecimal> JPY_910 = Map.of("JPY", new BigDecimal("9.1"));
 
@@ -155,4 +167,30 @@ class BudgetSummaryServiceTest {
 		assertTrue(r.myShare().excluded().isEmpty());
 	}
 
+	// ---- ACC-07 공통 접근 제어 (A의 체커) ----
+
+	@Test
+	void 내_1인_경비는_로그인한_회원_기준이다() {
+		nextId = 1;
+		when(account.requireLoginMemberId()).thenReturn(2L);
+		when(repository.findByTripIdOrderByItemIdAsc(1L)).thenReturn(List.of(
+				item(Scope.PERSONAL, "택시", null, "1000", "KRW", 1),
+				item(Scope.PERSONAL, "유심", null, "300", "KRW", 2)));
+
+		BudgetSummaryResponse r = service.getSummary(1L, 4);
+
+		verify(tripAccess).requireParticipant(1L, 2L);
+		assertEquals(300L, r.myShare().krwTotal()); // 회원 2의 개인 경비만
+	}
+
+	@Test
+	void 참여자가_아니거나_휴지통_여행이면_합계를_볼_수_없다() {
+		when(account.requireLoginMemberId()).thenReturn(1L);
+		doThrow(new BusinessException(ErrorCode.RESOURCE_NOT_ACCESSIBLE)).when(tripAccess).requireParticipant(1L, 1L);
+
+		BusinessException e = assertThrows(BusinessException.class, () -> service.getSummary(1L, 4));
+
+		assertEquals(ErrorCode.RESOURCE_NOT_ACCESSIBLE, e.getErrorCode());
+		verify(repository, never()).findByTripIdOrderByItemIdAsc(1L);
+	}
 }

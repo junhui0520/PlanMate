@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -33,6 +34,8 @@ import com.planmate.budget.entity.BudgetItem.Scope;
 import com.planmate.budget.repository.BudgetItemRepository;
 import com.planmate.common.exception.BusinessException;
 import com.planmate.common.exception.ErrorCode;
+import com.planmate.common.security.AccountStatusChecker;
+import com.planmate.common.security.TripAccessChecker;
 
 /**
  * BUD-01-02 경비 항목 추가 서버 검사 확인. DB와 환율은 가짜(Mock)로 둔다.
@@ -44,6 +47,7 @@ class BudgetServiceTest {
 	private static final Long ME = 1L;
 
 	private BudgetItemRepository repository;
+	private TripAccessChecker tripAccess;
 	private BudgetService service;
 
 	@BeforeEach
@@ -58,7 +62,18 @@ class BudgetServiceTest {
 			ReflectionTestUtils.setField(item, "itemId", 14L);
 			return item;
 		});
-		service = new BudgetService(repository, rates);
+		// 가짜 체커: 로그인 회원은 ME, 여행 검사는 기본으로 통과(소유자·편집 참여자)
+		AccountStatusChecker account = mock(AccountStatusChecker.class);
+		when(account.requireLoginMemberId()).thenReturn(ME);
+		tripAccess = mock(TripAccessChecker.class);
+		service = new BudgetService(repository, rates, account, tripAccess);
+	}
+
+	// 나를 조회 참여자로: requireEditor가 넘겨받은 기능별 문구로 거부한다 (진짜 TripAccessChecker와 같은 동작)
+	private void asViewer() {
+		for (ErrorCode denied : ErrorCode.values()) {
+			doThrow(new BusinessException(denied)).when(tripAccess).requireEditor(TRIP, ME, denied);
+		}
 	}
 
 	// 공통 경비 기본 입력 (식비, 1인당 30,000원)
@@ -73,7 +88,7 @@ class BudgetServiceTest {
 	}
 
 	private BudgetItemResponse add(BudgetItemRequest req) {
-		return service.addBudgetItem(TRIP, ME, true, 4, req);
+		return service.addBudgetItem(TRIP, 4, req);
 	}
 
 	private static void assertError(ErrorCode expected, Executable action) {
@@ -164,14 +179,16 @@ class BudgetServiceTest {
 
 	@Test
 	void 조회_참여자는_공통_경비를_추가할_수_없다() {
+		asViewer();
 		assertError(ErrorCode.BUDGET_COMMON_EDIT_FORBIDDEN,
-				() -> service.addBudgetItem(TRIP, ME, false, 4, common("점심", "1000", "JPY")));
+				() -> service.addBudgetItem(TRIP, 4, common("점심", "1000", "JPY")));
 	}
 
 	@Test
 	void 조회_참여자는_개인_경비도_추가할_수_없다_공통_문구() {
+		asViewer();
 		assertError(ErrorCode.EDIT_PERMISSION_CHANGED,
-				() -> service.addBudgetItem(TRIP, ME, false, 4, personal("택시", "1000", "JPY")));
+				() -> service.addBudgetItem(TRIP, 4, personal("택시", "1000", "JPY")));
 	}
 
 	// ---- 화면이 먼저 막는 값 (서버도 다시 검사, 공통 INVALID_INPUT) ----
@@ -280,7 +297,7 @@ class BudgetServiceTest {
 		BudgetItemRequest req = new BudgetItemRequest(Scope.COMMON, Category.LODGING, " 숙소 ", CalcType.TOTAL,
 				new BigDecimal("40000"), false, "JPY", "3박", null);
 
-		BudgetItemResponse r = service.updateBudgetItem(TRIP, 3L, ME, true, req);
+		BudgetItemResponse r = service.updateBudgetItem(TRIP, 3L, req);
 
 		assertEquals("숙소", r.name());
 		assertEquals(Category.LODGING, r.category());
@@ -296,7 +313,7 @@ class BudgetServiceTest {
 		existing(5L, Scope.PERSONAL, TRIP, ME, AmountSource.MANUAL);
 		BudgetItemRequest req = new BudgetItemRequest(Scope.PERSONAL, Category.ETC, "기념품", null, null, true, "JPY", null, null);
 
-		assertNull(service.updateBudgetItem(TRIP, 5L, ME, true, req).amount());
+		assertNull(service.updateBudgetItem(TRIP, 5L, req).amount());
 	}
 
 	@Test
@@ -305,7 +322,7 @@ class BudgetServiceTest {
 		BudgetItemRequest req = new BudgetItemRequest(Scope.COMMON, Category.TRANSPORT, "1일차 교통비", CalcType.PER_PERSON,
 				new BigDecimal("500"), false, "JPY", null, null);
 
-		assertEquals(AmountSource.ROUTE_FARE, service.updateBudgetItem(TRIP, 1L, ME, true, req).amountSource());
+		assertEquals(AmountSource.ROUTE_FARE, service.updateBudgetItem(TRIP, 1L, req).amountSource());
 	}
 
 	@Test
@@ -313,18 +330,18 @@ class BudgetServiceTest {
 		existing(3L, Scope.COMMON, TRIP, ME, AmountSource.MANUAL);
 
 		assertError(ErrorCode.BUDGET_NAME_REQUIRED,
-				() -> service.updateBudgetItem(TRIP, 3L, ME, true, common(" ", "100", "KRW")));
+				() -> service.updateBudgetItem(TRIP, 3L, common(" ", "100", "KRW")));
 		assertError(ErrorCode.BUDGET_AMOUNT_NEGATIVE,
-				() -> service.updateBudgetItem(TRIP, 3L, ME, true, common("점심", "-5", "KRW")));
+				() -> service.updateBudgetItem(TRIP, 3L, common("점심", "-5", "KRW")));
 		assertError(ErrorCode.INVALID_INPUT,
-				() -> service.updateBudgetItem(TRIP, 3L, ME, true, common("점심", "10989011", "JPY"))); // 1억 초과
+				() -> service.updateBudgetItem(TRIP, 3L, common("점심", "10989011", "JPY"))); // 1억 초과
 	}
 
 	@Test
 	void 공통_개인_구분은_수정으로_바꿀_수_없다() {
 		existing(3L, Scope.COMMON, TRIP, ME, AmountSource.MANUAL);
 
-		assertError(ErrorCode.INVALID_INPUT, () -> service.updateBudgetItem(TRIP, 3L, ME, true, personal("점심", "100", "KRW")));
+		assertError(ErrorCode.INVALID_INPUT, () -> service.updateBudgetItem(TRIP, 3L, personal("점심", "100", "KRW")));
 	}
 
 	@Test
@@ -332,9 +349,9 @@ class BudgetServiceTest {
 		when(repository.findById(99L)).thenReturn(Optional.empty());
 		existing(7L, Scope.COMMON, 2L, ME, AmountSource.MANUAL); // 다른 여행(2)의 항목
 
-		assertError(ErrorCode.BUDGET_ITEM_NOT_FOUND, () -> service.updateBudgetItem(TRIP, 99L, ME, true, common("점심", "1", "KRW")));
-		assertError(ErrorCode.BUDGET_ITEM_NOT_FOUND, () -> service.deleteBudgetItem(TRIP, 99L, ME, true));
-		assertError(ErrorCode.BUDGET_ITEM_NOT_FOUND, () -> service.deleteBudgetItem(TRIP, 7L, ME, true));
+		assertError(ErrorCode.BUDGET_ITEM_NOT_FOUND, () -> service.updateBudgetItem(TRIP, 99L, common("점심", "1", "KRW")));
+		assertError(ErrorCode.BUDGET_ITEM_NOT_FOUND, () -> service.deleteBudgetItem(TRIP, 99L));
+		assertError(ErrorCode.BUDGET_ITEM_NOT_FOUND, () -> service.deleteBudgetItem(TRIP, 7L));
 		assertEquals("이미 삭제된 경비예요.", ErrorCode.BUDGET_ITEM_NOT_FOUND.getMessage());
 	}
 
@@ -343,8 +360,8 @@ class BudgetServiceTest {
 		existing(7L, Scope.PERSONAL, TRIP, OTHER, AmountSource.MANUAL);
 
 		assertError(ErrorCode.BUDGET_EDIT_FORBIDDEN,
-				() -> service.updateBudgetItem(TRIP, 7L, ME, true, personal("유심", "100", "KRW")));
-		assertError(ErrorCode.BUDGET_EDIT_FORBIDDEN, () -> service.deleteBudgetItem(TRIP, 7L, ME, true));
+				() -> service.updateBudgetItem(TRIP, 7L, personal("유심", "100", "KRW")));
+		assertError(ErrorCode.BUDGET_EDIT_FORBIDDEN, () -> service.deleteBudgetItem(TRIP, 7L));
 		assertEquals("이 경비를 고칠 권한이 없어요.", ErrorCode.BUDGET_EDIT_FORBIDDEN.getMessage());
 	}
 
@@ -353,15 +370,17 @@ class BudgetServiceTest {
 		existing(3L, Scope.COMMON, TRIP, ME, AmountSource.MANUAL);
 		existing(5L, Scope.PERSONAL, TRIP, ME, AmountSource.MANUAL);
 
-		assertError(ErrorCode.BUDGET_EDIT_FORBIDDEN, () -> service.deleteBudgetItem(TRIP, 3L, ME, false));
-		assertError(ErrorCode.BUDGET_EDIT_FORBIDDEN, () -> service.deleteBudgetItem(TRIP, 5L, ME, false));
+		asViewer();
+		assertError(ErrorCode.BUDGET_EDIT_FORBIDDEN, () -> service.deleteBudgetItem(TRIP, 3L));
+		assertError(ErrorCode.BUDGET_EDIT_FORBIDDEN, () -> service.deleteBudgetItem(TRIP, 5L));
+		verify(repository, never()).delete(any(BudgetItem.class));
 	}
 
 	@Test
 	void 삭제하면_DB에서_지운다() {
 		BudgetItem item = existing(1L, Scope.COMMON, TRIP, ME, AmountSource.ROUTE_FARE); // 교통비 항목도 삭제 가능
 
-		service.deleteBudgetItem(TRIP, 1L, ME, true);
+		service.deleteBudgetItem(TRIP, 1L);
 
 		verify(repository).delete(item); // 구간 연결 기록은 DB가 함께 지움(ON DELETE CASCADE)
 	}
@@ -370,7 +389,7 @@ class BudgetServiceTest {
 	void 권한이_없으면_지우지_않는다() {
 		existing(7L, Scope.PERSONAL, TRIP, OTHER, AmountSource.MANUAL);
 
-		assertThrows(BusinessException.class, () -> service.deleteBudgetItem(TRIP, 7L, ME, true));
+		assertThrows(BusinessException.class, () -> service.deleteBudgetItem(TRIP, 7L));
 		verify(repository, never()).delete(any(BudgetItem.class));
 	}
 
@@ -380,7 +399,7 @@ class BudgetServiceTest {
 	void 메모를_쓰면_앞뒤_공백을_지우고_저장한다() {
 		existing(3L, Scope.COMMON, TRIP, OTHER, AmountSource.MANUAL); // 공통 경비는 편집 참여자면 누구 것이든
 
-		BudgetItemResponse r = service.updateBudgetMemo(TRIP, 3L, ME, true, "  3박, 조식 포함 ");
+		BudgetItemResponse r = service.updateBudgetMemo(TRIP, 3L, "  3박, 조식 포함 ");
 
 		assertEquals("3박, 조식 포함", r.memo()); // 메모가 생기면 화면 아이콘이 채워짐
 	}
@@ -390,38 +409,39 @@ class BudgetServiceTest {
 		BudgetItem item = existing(3L, Scope.COMMON, TRIP, ME, AmountSource.MANUAL);
 		item.updateMemo("예전 메모");
 
-		assertNull(service.updateBudgetMemo(TRIP, 3L, ME, true, "   ").memo()); // 빈 아이콘으로
-		assertNull(service.updateBudgetMemo(TRIP, 3L, ME, true, null).memo());
+		assertNull(service.updateBudgetMemo(TRIP, 3L, "   ").memo()); // 빈 아이콘으로
+		assertNull(service.updateBudgetMemo(TRIP, 3L, null).memo());
 	}
 
 	@Test
 	void 메모_200자는_되고_201자와_제어문자는_거절한다() {
 		existing(3L, Scope.COMMON, TRIP, ME, AmountSource.MANUAL);
 
-		assertEquals(200, BudgetService.countChars(service.updateBudgetMemo(TRIP, 3L, ME, true, "가".repeat(199) + "😀").memo()));
-		assertError(ErrorCode.INVALID_INPUT, () -> service.updateBudgetMemo(TRIP, 3L, ME, true, "가".repeat(201)));
-		assertError(ErrorCode.INVALID_INPUT, () -> service.updateBudgetMemo(TRIP, 3L, ME, true, "줄\n바꿈"));
+		assertEquals(200, BudgetService.countChars(service.updateBudgetMemo(TRIP, 3L, "가".repeat(199) + "😀").memo()));
+		assertError(ErrorCode.INVALID_INPUT, () -> service.updateBudgetMemo(TRIP, 3L, "가".repeat(201)));
+		assertError(ErrorCode.INVALID_INPUT, () -> service.updateBudgetMemo(TRIP, 3L, "줄\n바꿈"));
 	}
 
 	@Test
 	void 조회_참여자는_메모를_쓸_수_없다() {
 		existing(3L, Scope.COMMON, TRIP, ME, AmountSource.MANUAL);
 
-		assertError(ErrorCode.BUDGET_EDIT_FORBIDDEN, () -> service.updateBudgetMemo(TRIP, 3L, ME, false, "메모"));
+		asViewer();
+		assertError(ErrorCode.BUDGET_EDIT_FORBIDDEN, () -> service.updateBudgetMemo(TRIP, 3L, "메모"));
 	}
 
 	@Test
 	void 개인_경비에는_메모를_쓸_수_없다() {
 		existing(5L, Scope.PERSONAL, TRIP, ME, AmountSource.MANUAL);
 
-		assertError(ErrorCode.INVALID_INPUT, () -> service.updateBudgetMemo(TRIP, 5L, ME, true, "메모"));
+		assertError(ErrorCode.INVALID_INPUT, () -> service.updateBudgetMemo(TRIP, 5L, "메모"));
 	}
 
 	@Test
 	void 메모도_없는_항목이면_이미_삭제된_경비예요() {
 		when(repository.findById(99L)).thenReturn(Optional.empty());
 
-		assertError(ErrorCode.BUDGET_ITEM_NOT_FOUND, () -> service.updateBudgetMemo(TRIP, 99L, ME, true, "메모"));
+		assertError(ErrorCode.BUDGET_ITEM_NOT_FOUND, () -> service.updateBudgetMemo(TRIP, 99L, "메모"));
 	}
 
 	@Test
@@ -429,7 +449,7 @@ class BudgetServiceTest {
 		BudgetItem item = existing(1L, Scope.COMMON, TRIP, ME, AmountSource.ROUTE_FARE);
 		ReflectionTestUtils.setField(item, "calcNote", "¥400 x 4명");
 
-		BudgetItemResponse r = service.updateBudgetMemo(TRIP, 1L, ME, true, "지하철");
+		BudgetItemResponse r = service.updateBudgetMemo(TRIP, 1L, "지하철");
 
 		assertEquals(AmountSource.ROUTE_FARE, r.amountSource());
 		assertEquals("¥400 x 4명", r.calcNote());
@@ -508,7 +528,38 @@ class BudgetServiceTest {
 	void 수정에서는_예산_기준_계산을_쓰지_않는다() {
 		existing(3L, Scope.COMMON, TRIP, ME, AmountSource.MANUAL);
 
-		assertError(ErrorCode.INVALID_INPUT, () -> service.updateBudgetItem(TRIP, 3L, ME, true, rule("1000", "KRW", true, null, null)));
+		assertError(ErrorCode.INVALID_INPUT, () -> service.updateBudgetItem(TRIP, 3L, rule("1000", "KRW", true, null, null)));
 	}
 
+	// ---- ACC-07 공통 접근 제어 (A의 체커) ----
+
+	@Test
+	void 목록은_참여자_검사를_통과해야_보인다() {
+		when(repository.findByTripIdOrderByItemIdAsc(TRIP)).thenReturn(List.of());
+
+		service.getBudgetItems(TRIP);
+
+		verify(tripAccess).requireParticipant(TRIP, ME);
+	}
+
+	@Test
+	void 참여자가_아니거나_휴지통_여행이면_목록도_추가도_막는다() {
+		doThrow(new BusinessException(ErrorCode.RESOURCE_NOT_ACCESSIBLE)).when(tripAccess).requireParticipant(TRIP, ME);
+		doThrow(new BusinessException(ErrorCode.RESOURCE_NOT_ACCESSIBLE)).when(tripAccess)
+				.requireEditor(eq(TRIP), eq(ME), any(ErrorCode.class));
+
+		assertError(ErrorCode.RESOURCE_NOT_ACCESSIBLE, () -> service.getBudgetItems(TRIP));
+		assertError(ErrorCode.RESOURCE_NOT_ACCESSIBLE, () -> add(common("점심", "1000", "JPY")));
+		verify(repository, never()).save(any(BudgetItem.class));
+	}
+
+	@Test
+	void 수정은_항목을_찾기_전에_역할을_다시_확인한다() {
+		existing(3L, Scope.COMMON, TRIP, ME, AmountSource.MANUAL);
+		asViewer();
+
+		assertError(ErrorCode.BUDGET_EDIT_FORBIDDEN,
+				() -> service.updateBudgetItem(TRIP, 3L, common("점심", "100", "KRW")));
+		verify(repository, never()).findById(anyLong());
+	}
 }

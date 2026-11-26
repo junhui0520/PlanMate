@@ -22,6 +22,8 @@ import com.planmate.budget.dto.BudgetSummaryResponse.MyShareTotal;
 import com.planmate.budget.dto.ExchangeRateResponse;
 import com.planmate.budget.entity.BudgetItem;
 import com.planmate.budget.repository.BudgetItemRepository;
+import com.planmate.common.security.AccountStatusChecker;
+import com.planmate.common.security.TripAccessChecker;
 
 import lombok.RequiredArgsConstructor;
 
@@ -41,15 +43,19 @@ public class BudgetSummaryService {
 
 	private final BudgetItemRepository budgetItemRepository;
 	private final ExchangeRateService exchangeRateService;
+	private final AccountStatusChecker accountStatusChecker; // A: 로그인 회원
+	private final TripAccessChecker tripAccessChecker; // A: 여행 참여자·휴지통 검사
 
 	/**
 	 * 여행의 경비 합계.
 	 * TODO(B에 요청): peopleCount는 TripService(여행 인원, TRP-01·03)에서 받는다. 생기면 매개변수에서 뺀다.
-	 * TODO(A에 요청): myMemberId는 로그인 정보, 권한은 TripAccessChecker (pjh/security 머지 후)
-	 * 합계 API 주소는 위 두 가지가 생긴 뒤 연다(11/26 결정).
+	 * 권한: 로그인한 이 여행의 참여자(소유자·편집·조회), 휴지통 여행은 막음 (ACC-07). '내 1인 경비'는 로그인 회원 기준.
+	 * 합계 API 주소는 B의 TripStatusReader·여행 인원이 생긴 뒤 연다(11/26 결정).
 	 */
 	@Transactional(readOnly = true)
-	public BudgetSummaryResponse getSummary(Long tripId, Long myMemberId, int peopleCount) {
+	public BudgetSummaryResponse getSummary(Long tripId, int peopleCount) {
+		Long myMemberId = accountStatusChecker.requireLoginMemberId();
+		tripAccessChecker.requireParticipant(tripId, myMemberId);
 		List<BudgetItem> items = budgetItemRepository.findByTripIdOrderByItemIdAsc(tripId);
 		Map<String, BigDecimal> krwPerOne = new HashMap<>();
 		for (ExchangeRateResponse rate : exchangeRateService.getTodayRates()) { // BUD-04-01 오늘 환율(표)

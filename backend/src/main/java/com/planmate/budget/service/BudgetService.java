@@ -17,6 +17,8 @@ import com.planmate.budget.entity.BudgetItem.Scope;
 import com.planmate.budget.repository.BudgetItemRepository;
 import com.planmate.common.exception.BusinessException;
 import com.planmate.common.exception.ErrorCode;
+import com.planmate.common.security.AccountStatusChecker;
+import com.planmate.common.security.TripAccessChecker;
 
 import lombok.RequiredArgsConstructor;
 
@@ -35,16 +37,18 @@ public class BudgetService {
 
 	private final BudgetItemRepository budgetItemRepository;
 	private final ExchangeRateService exchangeRateService;
+	private final AccountStatusChecker accountStatusChecker; // A: 로그인 회원
+	private final TripAccessChecker tripAccessChecker; // A: 여행 참여자·역할·휴지통 검사
 
 	/**
 	 * BUD-01-01 여행 경비 목록 (공통·개인 모두, 추가한 순서).
 	 * 개인 경비도 모든 참여자가 볼 수 있다.
+	 * 권한: 로그인한 이 여행의 참여자(소유자·편집·조회), 휴지통 여행은 막음 (ACC-07)
 	 */
 	@Transactional(readOnly = true)
 	public List<BudgetItemResponse> getBudgetItems(Long tripId) {
-		// TODO(A에 요청): TripAccessChecker로 검사 (pjh/security 머지 후)
-		//   - 로그인 상태, 요청 시점에 이 여행의 참여자(소유자·편집·조회), 여행이 휴지통(TRASHED)이 아님
-		//   - 위반이면 공통 ErrorCode(LOGIN_REQUIRED, RESOURCE_NOT_ACCESSIBLE 등)로 BusinessException
+		Long memberId = accountStatusChecker.requireLoginMemberId();
+		tripAccessChecker.requireParticipant(tripId, memberId);
 		return budgetItemRepository.findByTripIdOrderByItemIdAsc(tripId).stream()
 				.map(BudgetItemResponse::from)
 				.toList();
@@ -52,25 +56,23 @@ public class BudgetService {
 
 	/**
 	 * BUD-01-02 경비 항목 추가. 화면에서 막는 값도 서버에서 다시 검사한다(AGENTS §6).
-	 * TODO(A에 요청): memberId는 로그인 정보, canEdit(소유자·편집 참여자면 true, 조회 참여자면 false)은
-	 *                 TripAccessChecker로 저장 직전에 다시 확인하고, 휴지통 여행은 막는다 (pjh/security 머지 후).
-	 *                 추가 주소(POST /api/trips/{tripId}/budget-items)는 그때 연다(11/26 결정).
+	 * 권한: 공통·개인 모두 소유자·편집 참여자만(조회 참여자 불가), 저장 직전에 역할을 다시 확인한다(ACC-07).
+	 * 추가 주소(POST /api/trips/{tripId}/budget-items)는 B의 TripStatusReader가 생긴 뒤 연다.
 	 * TODO(B에 요청): 저장 후 다른 참여자 화면 반영은 SyncService (COL-06-01)
 	 * TODO(B에 요청): peopleCount(여행 인원)는 TripService에서 받는다. 지금은 매개변수(예산 기준 계산에만 씀).
 	 */
 	@Transactional
-	public BudgetItemResponse addBudgetItem(Long tripId, Long memberId, boolean canEdit, int peopleCount,
-			BudgetItemRequest req) {
+	public BudgetItemResponse addBudgetItem(Long tripId, int peopleCount, BudgetItemRequest req) {
+		Long memberId = accountStatusChecker.requireLoginMemberId();
 		if (req.scope() == null || req.category() == null) {
 			throw new BusinessException(ErrorCode.INVALID_INPUT);
 		}
 		boolean common = req.scope() == Scope.COMMON;
 
-		// 권한: 공통은 소유자·편집 참여자, 개인도 소유자·편집 참여자(본인 것만, 조회 참여자 불가)
-		if (!canEdit) {
-			// 정한 내용(11/26): 개인 경비 문구는 기능정의서에 없어 공통 EDIT_PERMISSION_CHANGED 사용
-			throw new BusinessException(common ? ErrorCode.BUDGET_COMMON_EDIT_FORBIDDEN : ErrorCode.EDIT_PERMISSION_CHANGED);
-		}
+		// 권한: 공통은 소유자·편집 참여자, 개인도 소유자·편집 참여자(새 항목은 항상 본인 것, 조회 참여자 불가)
+		// 정한 내용(11/26): 개인 경비 문구는 기능정의서에 없어 공통 EDIT_PERMISSION_CHANGED 사용
+		tripAccessChecker.requireEditor(tripId, memberId,
+				common ? ErrorCode.BUDGET_COMMON_EDIT_FORBIDDEN : ErrorCode.EDIT_PERMISSION_CHANGED);
 
 		String name = checkName(req.name());
 		String memo = checkMemo(common, req.memo());
@@ -162,14 +164,12 @@ public class BudgetService {
 	/**
 	 * BUD-01-04 경비 항목 수정. 입력 규칙은 추가(BUD-01-02)와 같고, 개수 제한은 보지 않는다.
 	 * 동시 수정은 나중에 저장한 값으로 덮어쓴다(COL-06-02).
-	 * TODO(A에 요청): memberId·canEdit은 로그인 정보·TripAccessChecker (저장 직전 역할 재확인, 휴지통 여행 막기).
-	 *                 수정 주소(PUT /api/trips/{tripId}/budget-items/{itemId})는 그때 연다.
+	 * 수정 주소(PUT /api/trips/{tripId}/budget-items/{itemId})는 B의 TripStatusReader가 생긴 뒤 연다.
 	 * TODO(B에 요청): 저장 후 다른 참여자 화면 반영은 SyncService (COL-06-01)
 	 */
 	@Transactional
-	public BudgetItemResponse updateBudgetItem(Long tripId, Long itemId, Long memberId, boolean canEdit,
-			BudgetItemRequest req) {
-		BudgetItem item = findEditableItem(tripId, itemId, memberId, canEdit);
+	public BudgetItemResponse updateBudgetItem(Long tripId, Long itemId, BudgetItemRequest req) {
+		BudgetItem item = findEditableItem(tripId, itemId);
 		// 구분(공통·개인)은 수정으로 바꿀 수 없음. 예산 기준 계산은 추가 창에서만(정한 내용 11/26)
 		if (req.scope() != item.getScope() || req.category() == null || req.budgetRule() != null) {
 			throw new BusinessException(ErrorCode.INVALID_INPUT);
@@ -189,24 +189,24 @@ public class BudgetService {
 	/**
 	 * BUD-01-04 경비 항목 삭제. 교통비로 반영된 항목이면 구간 연결 기록(FARE_EXPENSE_LINK)도
 	 * DB의 ON DELETE CASCADE로 함께 삭제된다(RTE-03-02).
-	 * TODO(A에 요청): memberId·canEdit은 로그인 정보·TripAccessChecker. 삭제 주소(DELETE ...)는 그때 연다.
+	 * 삭제 주소(DELETE ...)는 B의 TripStatusReader가 생긴 뒤 연다.
 	 * TODO(B에 요청): 삭제 후 다른 참여자 화면 반영은 SyncService (COL-06-01)
 	 */
 	@Transactional
-	public void deleteBudgetItem(Long tripId, Long itemId, Long memberId, boolean canEdit) {
-		budgetItemRepository.delete(findEditableItem(tripId, itemId, memberId, canEdit));
+	public void deleteBudgetItem(Long tripId, Long itemId) {
+		budgetItemRepository.delete(findEditableItem(tripId, itemId));
 	}
 
 	/**
 	 * BUD-02-03 펼친 칸에서 메모 작성·수정·삭제 (공통 경비만, 비우면 삭제).
 	 * 규칙은 BUD-01-02 메모와 같다: 0~200자, 앞뒤 공백 제거, 제어문자 불가. 동시 수정은 나중 값으로 덮어씀.
 	 * 정한 내용(11/26): 권한 없음은 BUD-01-04 문구 "이 경비를 고칠 권한이 없어요."를 같이 쓴다.
-	 * TODO(A에 요청): memberId·canEdit은 로그인 정보·TripAccessChecker. 메모 주소(PATCH .../memo)는 그때 연다.
+	 * 메모 주소(PATCH .../memo)는 B의 TripStatusReader가 생긴 뒤 연다.
 	 * TODO(B에 요청): 저장 후 다른 참여자 화면 반영은 SyncService (COL-06-01)
 	 */
 	@Transactional
-	public BudgetItemResponse updateBudgetMemo(Long tripId, Long itemId, Long memberId, boolean canEdit, String memo) {
-		BudgetItem item = findEditableItem(tripId, itemId, memberId, canEdit);
+	public BudgetItemResponse updateBudgetMemo(Long tripId, Long itemId, String memo) {
+		BudgetItem item = findEditableItem(tripId, itemId);
 		if (item.getScope() != Scope.COMMON) {
 			throw new BusinessException(ErrorCode.INVALID_INPUT); // 개인 경비 항목에는 메모 아이콘 없음
 		}
@@ -214,15 +214,18 @@ public class BudgetService {
 		return BudgetItemResponse.from(item);
 	}
 
-	// BUD-01-04 없거나 다른 여행의 항목이면 "이미 삭제된 경비예요.",
-	// 공통은 소유자·편집 참여자만, 개인은 주인 본인만(주인이 소유자·편집 참여자일 때) — 아니면 "이 경비를 고칠 권한이 없어요."
-	private BudgetItem findEditableItem(Long tripId, Long itemId, Long memberId, boolean canEdit) {
+	// BUD-01-04 고칠 수 있는 항목 찾기 (저장 직전에 역할을 다시 확인, ACC-07)
+	// 1) 로그인 2) 이 여행의 소유자·편집 참여자(조회 참여자·휴지통 여행 막음) 3) 없거나 다른 여행의 항목이면 "이미 삭제된 경비예요."
+	// 4) 개인 경비는 주인 본인만 — 소유자도 남의 개인 경비는 불가, "이 경비를 고칠 권한이 없어요."
+	//    (정한 내용 11/26: requireSelf 대신 직접 비교해서 BUD-01-04 문구를 그대로 씀)
+	private BudgetItem findEditableItem(Long tripId, Long itemId) {
+		Long memberId = accountStatusChecker.requireLoginMemberId();
+		tripAccessChecker.requireEditor(tripId, memberId, ErrorCode.BUDGET_EDIT_FORBIDDEN);
 		BudgetItem item = budgetItemRepository.findById(itemId)
 				.filter(found -> found.getTripId().equals(tripId))
 				.orElseThrow(() -> new BusinessException(ErrorCode.BUDGET_ITEM_NOT_FOUND));
-		boolean ownPersonal = item.getScope() == Scope.PERSONAL && memberId.equals(item.getCreatedBy());
-		if (!canEdit || (item.getScope() == Scope.PERSONAL && !ownPersonal)) {
-			throw new BusinessException(ErrorCode.BUDGET_EDIT_FORBIDDEN); // 소유자도 남의 개인 경비는 불가
+		if (item.getScope() == Scope.PERSONAL && !memberId.equals(item.getCreatedBy())) {
+			throw new BusinessException(ErrorCode.BUDGET_EDIT_FORBIDDEN);
 		}
 		return item;
 	}
