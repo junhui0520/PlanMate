@@ -16,11 +16,13 @@ import lombok.NoArgsConstructor;
 
 import org.hibernate.type.YesNoConverter;
 
+import com.planmate.common.util.DateTimeUtil;
+
 /**
  * PUBLIC_POST (공개 게시물). schema.sql 그대로 전체 칼럼. 여행당 1개(UQ_PUBLIC_POST_01).
  * TRIP·MEMBER와 @ManyToOne으로 묶지 않고 ID 값만 들고 있는다 (AGENTS §6).
  * 공개 일정은 따로 복사하지 않고 원래 여행의 현재 일정에서 읽는다 (PUB-01-03).
- * 게시·비공개·제목 수정 메서드는 PUB-01·02에서 추가한다.
+ * 사진(POST_IMAGE_URL)은 형식·크기·저장 위치가 정해지지 않아 아직 쓰지 않는다(항상 비움 → 기본 배경). TODO(팀 결정)
  */
 @Entity
 @Table(name = "PUBLIC_POST")
@@ -73,6 +75,44 @@ public class PublicPost {
     // 제목·소개·사진을 고친 시각 (PUB-02-05, 고친 적 없으면 null)
     @Column(name = "UPDATED_AT")
     private LocalDateTime updatedAt;
+
+    /** PUB-01-03 처음 게시: 공개, 관리자 숨김 아님, 좋아요 0, 처음 게시 시각 기록 */
+    public static PublicPost publish(Long tripId, Long authorId, String title, String intro) {
+        PublicPost post = new PublicPost();
+        post.tripId = tripId;
+        post.authorId = authorId;
+        post.postTitle = title;
+        post.postIntro = intro;
+        post.isPublic = true;
+        post.adminHidden = false;
+        post.likeCount = 0;
+        post.publishedAt = DateTimeUtil.now();
+        return post;
+    }
+
+    /**
+     * PUB-01-03 비공개로 바꾼 게시물을 다시 공개: 같은 게시물에 새 제목·소개를 저장(좋아요·댓글 유지).
+     * 정한 내용(11/27): 처음 게시 시각은 그대로 두고 수정 시각만 기록한다.
+     */
+    public void republish(Long authorId, String title, String intro) {
+        this.authorId = authorId;
+        this.postTitle = title;
+        this.postIntro = intro;
+        this.isPublic = true;
+        this.updatedAt = DateTimeUtil.now();
+    }
+
+    /** PUB-02-02 비공개 전환 (좋아요·댓글·북마크는 그대로) */
+    public void makePrivate() {
+        this.isPublic = false;
+    }
+
+    /** PUB-02-05 공개용 제목·소개 수정 (일정·좋아요·처음 게시 시각은 그대로) */
+    public void updateInfo(String title, String intro) {
+        this.postTitle = title;
+        this.postIntro = intro;
+        this.updatedAt = DateTimeUtil.now();
+    }
 
     /** PUB-05-01 좋아요 수 +1 (게시물 행을 잠근 뒤 부른다) */
     public void increaseLikeCount() {

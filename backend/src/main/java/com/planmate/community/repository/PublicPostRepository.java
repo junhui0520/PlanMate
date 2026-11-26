@@ -28,6 +28,9 @@ import com.planmate.community.entity.PublicPost;
  */
 public interface PublicPostRepository extends JpaRepository<PublicPost, Long> {
 
+    // PUB-01 여행당 게시물 1개 (UQ_PUBLIC_POST_01)
+    Optional<PublicPost> findByTripId(Long tripId);
+
     // PUB-05·06 좋아요·북마크 처리 중 게시물 행 잠금: 연타·동시 요청이 차례로 처리돼 좋아요 수가 두 번 오르지 않는다
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select p from PublicPost p where p.postId = :postId")

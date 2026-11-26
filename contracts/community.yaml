@@ -6,8 +6,10 @@ info:
   description: |
     공개 여행 목록·상세 API 약속. 기준: 세부기능정의서 v33 PUB-03·04, DB설계서 v7 PUBLIC_POST, 와이어프레임 D-01·D-02.
     응답·에러·날짜 형식은 `contracts/common.yaml`을 따른다.
-    - 지금 있는 API: PUB-03 공개 여행 목록·검색·정렬, PUB-04 공개 여행 상세, PUB-05 좋아요·취소, PUB-06 북마크·내 북마크
-    - 다른 기능(PUB-01·02 공유·게시, PUB-07~09 복제·댓글·신고)은 만들 때 이 파일에 더한다.
+    - 지금 있는 API: PUB-01 공유하기·미리보기·게시, PUB-02-02 비공개 전환, PUB-02-05 제목·소개 수정,
+      PUB-03 공개 여행 목록·검색·정렬, PUB-04 공개 여행 상세, PUB-05 좋아요·취소, PUB-06 북마크·내 북마크
+    - 다른 기능(PUB-02-04 내 게시글, PUB-07~09 복제·댓글·신고)은 만들 때 이 파일에 더한다.
+    - 게시물 사진(POST_IMAGE_URL)은 형식·크기·저장 위치가 정해지지 않아 아직 받지 않는다(항상 null → 기본 배경).
     - 좋아요·북마크·내 북마크는 로그인이 필요하다(기본 규칙 그대로, A에 따로 요청할 것 없음).
 
     ## 로그인 없이 쓰는 API (A 파트 SecurityConfig에 요청)
@@ -27,6 +29,12 @@ info:
     | LIKE_RESTRICTED | 403 | 이용 제한 중에는 좋아요를 누를 수 없어요. | PUB-05-01 |
     | COMMUNITY_FEATURE_RESTRICTED | 403 | 이용 제한 중에는 커뮤니티 기능을 쓸 수 없어요. | PUB-05-02, PUB-06-01 |
     | BOOKMARK_LIMIT_EXCEEDED | 409 | 북마크는 최대 200개까지 담을 수 있어요. | PUB-06-01 |
+    | POST_TITLE_REQUIRED | 400 | 공개용 제목을 입력해 주세요. | PUB-01-01·03, PUB-02-05 |
+    | POST_RESTRICTED | 403 | 이용 제한 중에는 게시할 수 없어요. | PUB-01-01·02·03 |
+    | POST_OWNER_ONLY | 403 | 여행 소유자만 공개할 수 있어요. | PUB-01-01·02·03 |
+    | POST_ALREADY_PUBLIC | 409 | 이미 공개한 여행이에요. | PUB-01-03 |
+    | POST_TRIP_TRASHED | 409 | 휴지통에 있는 여행은 게시할 수 없어요. | PUB-01-02·03 |
+    | POST_ADMIN_HIDDEN | 403 | 관리자가 비공개로 바꾼 게시물이라 다시 공유할 수 없어요. | PUB-01-03, PUB-02-03 |
 
 servers:
   - url: http://localhost:8080
@@ -448,6 +456,195 @@ paths:
         '401':
           $ref: './common.yaml#/components/responses/Unauthorized'
 
+  /api/trips/{tripId}/post:
+    parameters:
+      - name: tripId
+        in: path
+        required: true
+        schema:
+          $ref: './common.yaml#/components/schemas/Id'
+    get:
+      tags: [community]
+      operationId: getShareStatus
+      summary: "PUB-01-01 공유하기 상태 (버튼·입력 칸)"
+      description: |
+        여행 화면 공유하기 아이콘의 상태와 공개 정보 창에 넣을 값.
+        - NONE: 처음 공유 → 두 칸 모두 빈칸 / PUBLIC: 공개 중 → 공유하기 비활성
+        - PRIVATE: 소유자가 비공개로 바꿈 → 예전 공개용 제목·소개를 넣어 다시 공유
+        - ADMIN_HIDDEN: 관리자 비공개 → 누르면 "관리자가 비공개로 바꾼 게시물이라 다시 공유할 수 없어요."
+        권한: 여행 소유자(아니면 POST_OWNER_ONLY 403). 휴지통 여행이면 404.
+      responses:
+        '200':
+          description: "게시 상태"
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: './common.yaml#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/PostShareStatusResponse'
+        '401':
+          $ref: './common.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common.yaml#/components/responses/Forbidden'
+        '404':
+          $ref: './common.yaml#/components/responses/NotFound'
+    post:
+      tags: [community]
+      operationId: publishPost
+      summary: "PUB-01-03 게시"
+      description: |
+        미리보기한 공개용 제목·소개를 저장해 커뮤니티에 올린다. 공개 일정은 복사하지 않고 원래 여행의 현재 일정을 보여 준다.
+        - 여행당 게시물 1개. 공개 중이면 POST_ALREADY_PUBLIC(409), 관리자 비공개면 POST_ADMIN_HIDDEN(403).
+        - 비공개로 바꾼 게시물이 있으면 그 게시물을 다시 공개(좋아요·댓글 유지, 처음 게시 시각 그대로, 수정 시각 기록).
+        - 같은 requestKey는 한 번만 처리(두 번 눌러도 게시물 1개, 같은 postId를 돌려줌).
+        - 제목·소개 규칙은 PostCreateRequest. 휴지통 여행이면 POST_TRIP_TRASHED(409).
+        - TODO(B에 요청): 방문 일정이 없으면 "일정을 추가한 뒤 공유할 수 있어요."로 막는 검사는 B의 시간표 조회가 생기면 더한다.
+        화면: 확인 창 "다른 회원이 이 일정을 보고 복제할 수 있어요. 게시할까요?" → "게시 완료" → 이 게시물 상세로 이동.
+        권한: 여행 소유자(이용 제한 회원 불가 POST_RESTRICTED 403).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PostCreateRequest'
+      responses:
+        '200':
+          description: "게시한 게시물 ID"
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: './common.yaml#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        required: [postId]
+                        properties:
+                          postId:
+                            $ref: './common.yaml#/components/schemas/Id'
+        '400':
+          $ref: './common.yaml#/components/responses/BadRequest'
+        '401':
+          $ref: './common.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common.yaml#/components/responses/Forbidden'
+        '404':
+          $ref: './common.yaml#/components/responses/NotFound'
+        '409':
+          $ref: './common.yaml#/components/responses/Conflict'
+
+  /api/trips/{tripId}/post-preview:
+    get:
+      tags: [community]
+      operationId: getPostPreview
+      summary: "PUB-01-02 공개 미리보기"
+      description: |
+        원래 여행의 현재 일정에서 공개 허용 값만 서버가 골라 준다(화면에서 가리는 방식이 아님). 열기만 해서는 저장하지 않는다.
+        공개용 제목·소개는 저장 전이라 화면이 들고 있다. 실제 날짜·경비·참여자·메모·집<->공항·고정 상태·AI 조건·구간 요금은 칸이 없다.
+        TODO(B에 요청): schedule(저장된 시간표)·cityName·mapProvider, TODO(A에 요청): authorNickname은 아직 null·빈 배열.
+        권한: 여행 소유자(이용 제한 회원 불가), 휴지통 여행이면 POST_TRIP_TRASHED(409).
+      parameters:
+        - name: tripId
+          in: path
+          required: true
+          schema:
+            $ref: './common.yaml#/components/schemas/Id'
+      responses:
+        '200':
+          description: "공개될 내용"
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: './common.yaml#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/PostPreviewResponse'
+        '401':
+          $ref: './common.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common.yaml#/components/responses/Forbidden'
+        '404':
+          $ref: './common.yaml#/components/responses/NotFound'
+        '409':
+          $ref: './common.yaml#/components/responses/Conflict'
+
+  /api/community/posts/{postId}/info:
+    put:
+      tags: [community]
+      operationId: updatePostInfo
+      summary: "PUB-02-05 공개용 제목·소개 수정"
+      description: |
+        공개 중인 게시물의 제목·소개만 고친다(일정·좋아요·처음 게시 시각은 그대로). 저장하면 수정 시각이 바뀐다.
+        공개 중이 아니면(비공개·관리자 숨김) 404 PUBLIC_POST_NOT_VISIBLE. 응답은 고친 뒤의 공개 상세.
+        권한: 여행 소유자(아니면 EDIT_PERMISSION_DENIED 403), 이용 제한 회원 불가(COMMUNITY_FEATURE_RESTRICTED 403).
+      parameters:
+        - name: postId
+          in: path
+          required: true
+          schema:
+            $ref: './common.yaml#/components/schemas/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PostUpdateRequest'
+      responses:
+        '200':
+          description: "고친 뒤의 공개 상세"
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: './common.yaml#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/PostDetailResponse'
+        '400':
+          $ref: './common.yaml#/components/responses/BadRequest'
+        '401':
+          $ref: './common.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common.yaml#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/PostNotVisible'
+
+  /api/community/posts/{postId}/private:
+    patch:
+      tags: [community]
+      operationId: makePostPrivate
+      summary: "PUB-02-02 비공개 전환"
+      description: |
+        IS_PUBLIC = N. 원래 여행·좋아요·댓글·북마크는 그대로, 이미 복제된 여행도 그대로. 관리자 숨김이어도 할 수 있고, 이미 비공개면 그대로 성공.
+        응답 data는 null. 화면: 확인 창 "북마크한 회원도 볼 수 없게 돼요. 이미 복제된 여행은 남아요." → "비공개 전환 완료" → 내 게시글로 이동.
+        권한: 여행 소유자(아니면 EDIT_PERMISSION_DENIED 403), 이용 제한 회원 불가(COMMUNITY_FEATURE_RESTRICTED 403).
+      parameters:
+        - name: postId
+          in: path
+          required: true
+          schema:
+            $ref: './common.yaml#/components/schemas/Id'
+      responses:
+        '200':
+          description: "비공개로 바뀜 (data null)"
+          content:
+            application/json:
+              schema:
+                $ref: './common.yaml#/components/schemas/ApiResponse'
+        '401':
+          $ref: './common.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common.yaml#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/PostNotVisible'
+
 components:
   responses:
     PostNotVisible:
@@ -690,3 +887,73 @@ components:
             - type: 'null'
         bookmarkedAt:
           $ref: './common.yaml#/components/schemas/LocalDateTime'
+
+    PostShareStatusResponse:
+      type: object
+      description: "PUB-01-01 공유하기 상태. PUB-02-03 내 여행 카드는 PUBLIC만 \"공개\", 나머지는 \"비공개\""
+      required: [status, postId, title, intro]
+      properties:
+        status:
+          type: string
+          enum: [NONE, PUBLIC, PRIVATE, ADMIN_HIDDEN]
+        postId:
+          oneOf:
+            - $ref: './common.yaml#/components/schemas/Id'
+            - type: 'null'
+        title:
+          type: [string, 'null']
+          description: "게시물이 있으면 공개용 제목 (PRIVATE이면 다시 공유할 때 입력 칸에 넣음)"
+        intro:
+          type: [string, 'null']
+
+    PostCreateRequest:
+      type: object
+      description: |
+        PUB-01-03 게시 입력값. 사진은 아직 받지 않는다.
+        - title: 필수 1~40자. 앞뒤 공백 제거, 제어문자는 공백 1칸으로. 비면 POST_TITLE_REQUIRED "공개용 제목을 입력해 주세요."
+        - intro: 0~100자, 줄바꿈만 허용(다른 제어문자는 공백 1칸), 비면 null
+        - 글자 수는 이모지도 1글자. 넘으면 INVALID_INPUT(화면에서 막는 값)
+      required: [requestKey, title]
+      properties:
+        requestKey:
+          $ref: './common.yaml#/components/schemas/RequestKey'
+        title:
+          type: string
+          maxLength: 40
+          example: "도쿄 3박 4일 가족여행"
+        intro:
+          type: [string, 'null']
+          maxLength: 100
+
+    PostUpdateRequest:
+      type: object
+      description: "PUB-02-05 공개용 제목·소개 수정값. 규칙은 PostCreateRequest의 title·intro와 같다"
+      required: [title]
+      properties:
+        title:
+          type: string
+          maxLength: 40
+        intro:
+          type: [string, 'null']
+          maxLength: 100
+
+    PostPreviewResponse:
+      type: object
+      description: "PUB-01-02 공개 미리보기. 공개 허용 값만 (제목·소개는 화면이 들고 있음)"
+      required: [cityName, mapProvider, days, authorNickname, schedule]
+      properties:
+        cityName:
+          type: [string, 'null']
+        mapProvider:
+          type: [string, 'null']
+          enum: [KAKAO, GOOGLE, null]
+        days:
+          type: integer
+          minimum: 1
+          maximum: 7
+        authorNickname:
+          type: [string, 'null']
+        schedule:
+          type: array
+          items:
+            $ref: '#/components/schemas/PublicDay'
