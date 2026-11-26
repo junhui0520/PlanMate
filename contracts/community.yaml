@@ -6,8 +6,9 @@ info:
   description: |
     공개 여행 목록·상세 API 약속. 기준: 세부기능정의서 v33 PUB-03·04, DB설계서 v7 PUBLIC_POST, 와이어프레임 D-01·D-02.
     응답·에러·날짜 형식은 `contracts/common.yaml`을 따른다.
-    - 지금 있는 API: PUB-03 공개 여행 목록·검색·정렬, PUB-04 공개 여행 상세
-    - 다른 기능(PUB-01·02 공유·게시, PUB-05~09 좋아요·북마크·복제·댓글·신고)은 만들 때 이 파일에 더한다.
+    - 지금 있는 API: PUB-03 공개 여행 목록·검색·정렬, PUB-04 공개 여행 상세, PUB-05 좋아요·취소, PUB-06 북마크·내 북마크
+    - 다른 기능(PUB-01·02 공유·게시, PUB-07~09 복제·댓글·신고)은 만들 때 이 파일에 더한다.
+    - 좋아요·북마크·내 북마크는 로그인이 필요하다(기본 규칙 그대로, A에 따로 요청할 것 없음).
 
     ## 로그인 없이 쓰는 API (A 파트 SecurityConfig에 요청)
     아래 두 주소는 비회원도 부른다(PUB-03-01·04-01 "로그인 없이 가능").
@@ -22,7 +23,10 @@ info:
     ## 이 파일에서 쓰는 D 파트 에러 코드
     | 상수 | HTTP 상태 | 문구 | 기능 ID |
     |---|---|---|---|
-    | PUBLIC_POST_NOT_VISIBLE | 404 | 볼 수 없는 게시물이에요. | PUB-04-01 (예정: 서버 만들 때 ErrorCode D 구역에 추가, 팀 공유) |
+    | PUBLIC_POST_NOT_VISIBLE | 404 | 볼 수 없는 게시물이에요. | PUB-04-01, PUB-05-01, PUB-06-01 |
+    | LIKE_RESTRICTED | 403 | 이용 제한 중에는 좋아요를 누를 수 없어요. | PUB-05-01 |
+    | COMMUNITY_FEATURE_RESTRICTED | 403 | 이용 제한 중에는 커뮤니티 기능을 쓸 수 없어요. | PUB-05-02, PUB-06-01 |
+    | BOOKMARK_LIMIT_EXCEEDED | 409 | 북마크는 최대 200개까지 담을 수 있어요. | PUB-06-01 |
 
 servers:
   - url: http://localhost:8080
@@ -246,7 +250,225 @@ paths:
                       fieldErrors: []
                     message: "볼 수 없는 게시물이에요."
 
+  /api/community/posts/{postId}/like:
+    parameters:
+      - name: postId
+        in: path
+        required: true
+        schema:
+          $ref: './common.yaml#/components/schemas/Id'
+    put:
+      tags: [community]
+      operationId: likePost
+      summary: "PUB-05-01 좋아요"
+      description: |
+        회원당 게시물 하나에 좋아요 하나. 이미 눌렀으면 그대로 성공(좋아요 수 안 오름). 빠르게 여러 번 눌러도 1만 오른다.
+        대상은 공개 게시물만(볼 수 있는 조건은 info 참고). 내 게시물에도 할 수 있다.
+        화면은 먼저 채우고 +1 한 뒤, 실패하면 되돌리고 "좋아요를 누르지 못했어요."(서버 문구가 있으면 그 문구).
+        권한: 로그인한 정상 회원(이용 제한 회원 불가).
+      responses:
+        '200':
+          description: "좋아요 한 상태와 게시물 좋아요 수"
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: './common.yaml#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/LikeResponse'
+              examples:
+                OK:
+                  value: { success: true, data: { liked: true, likeCount: 13 }, message: null }
+        '401':
+          $ref: './common.yaml#/components/responses/Unauthorized'
+        '403':
+          description: "이용 제한 (LIKE_RESTRICTED)"
+          content:
+            application/json:
+              schema:
+                $ref: './common.yaml#/components/schemas/ErrorResponse'
+              examples:
+                LIKE_RESTRICTED:
+                  value: { success: false, data: { code: "LIKE_RESTRICTED", fieldErrors: [] }, message: "이용 제한 중에는 좋아요를 누를 수 없어요." }
+        '404':
+          $ref: '#/components/responses/PostNotVisible'
+    delete:
+      tags: [community]
+      operationId: unlikePost
+      summary: "PUB-05-02 좋아요 취소"
+      description: |
+        좋아요가 없으면 그대로 성공(좋아요 수 안 바뀜). 좋아요 수는 0 아래로 내려가지 않는다.
+        취소는 게시물이 지금 보이는지 따지지 않는다(게시물이 아예 없으면 404).
+        화면은 먼저 비우고 -1 한 뒤, 실패하면 되돌리고 "좋아요를 취소하지 못했어요."
+        권한: 로그인한 정상 회원(이용 제한 회원 불가).
+      responses:
+        '200':
+          description: "좋아요 안 한 상태와 게시물 좋아요 수"
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: './common.yaml#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/LikeResponse'
+              examples:
+                OK:
+                  value: { success: true, data: { liked: false, likeCount: 12 }, message: null }
+        '401':
+          $ref: './common.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/CommunityFeatureRestricted'
+        '404':
+          $ref: '#/components/responses/PostNotVisible'
+
+  /api/community/posts/{postId}/bookmark:
+    parameters:
+      - name: postId
+        in: path
+        required: true
+        schema:
+          $ref: './common.yaml#/components/schemas/Id'
+    put:
+      tags: [community]
+      operationId: bookmarkPost
+      summary: "PUB-06-01 북마크 저장"
+      description: |
+        공개 게시물만 담는다. 같은 게시물은 1개(이미 담았으면 그대로 성공). 회원당 최대 200개.
+        화면: 처리 중 잠금 → 성공하면 책갈피 채움 + "북마크 완료"(3초), 실패하면 "북마크에 담지 못했어요."(서버 문구가 있으면 그 문구).
+        권한: 로그인한 정상 회원(이용 제한 회원 불가).
+      responses:
+        '200':
+          description: "담은 상태"
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: './common.yaml#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/BookmarkResponse'
+              examples:
+                OK:
+                  value: { success: true, data: { bookmarked: true }, message: null }
+        '401':
+          $ref: './common.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/CommunityFeatureRestricted'
+        '404':
+          $ref: '#/components/responses/PostNotVisible'
+        '409':
+          description: "200개 초과 (BOOKMARK_LIMIT_EXCEEDED)"
+          content:
+            application/json:
+              schema:
+                $ref: './common.yaml#/components/schemas/ErrorResponse'
+              examples:
+                BOOKMARK_LIMIT_EXCEEDED:
+                  value: { success: false, data: { code: "BOOKMARK_LIMIT_EXCEEDED", fieldErrors: [] }, message: "북마크는 최대 200개까지 담을 수 있어요." }
+    delete:
+      tags: [community]
+      operationId: unbookmarkPost
+      summary: "PUB-06-01 북마크 해제"
+      description: |
+        없으면 그대로 성공. 원래 게시물·좋아요 수는 바뀌지 않는다. 볼 수 없게 된 게시물도 해제할 수 있다(PUB-06-02).
+        화면: 성공하면 "북마크에서 뺐어요"(3초).
+        권한: 로그인한 정상 회원(이용 제한 회원 불가).
+      responses:
+        '200':
+          description: "해제한 상태"
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: './common.yaml#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/BookmarkResponse'
+              examples:
+                OK:
+                  value: { success: true, data: { bookmarked: false }, message: null }
+        '401':
+          $ref: './common.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/CommunityFeatureRestricted'
+
+  /api/community/bookmarks:
+    get:
+      tags: [community]
+      operationId: getMyBookmarks
+      summary: "PUB-06-02 내 북마크 목록"
+      description: |
+        내가 담은 공개 게시물. 담은 시각 최신순 20개씩, 다음 20개는 마지막 카드의 `bookmarkId`를 `after`로 보낸다.
+        비공개·관리자 숨김·원래 여행 휴지통이 된 게시물은 카드만 남기고 내용 없이 보낸다(visible = false, post = null → 화면 "볼 수 없는 게시물").
+        `totalElements`는 내 북마크 전체 수. `after`가 없거나 내 북마크가 아니면 400 INVALID_INPUT.
+        권한: 로그인 회원 본인(이용 제한 회원도 볼 수 있음).
+      parameters:
+        - name: after
+          in: query
+          required: false
+          description: "지금까지 받은 마지막 카드의 bookmarkId. 없으면 첫 20개"
+          schema:
+            $ref: './common.yaml#/components/schemas/Id'
+        - name: page
+          in: query
+          required: false
+          description: "몇 번째 요청인지(0부터). 서버는 응답 page에 그대로 돌려준다"
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+      responses:
+        '200':
+          description: "내 북마크 (한 번에 20개)"
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: './common.yaml#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        allOf:
+                          - $ref: './common.yaml#/components/schemas/PageResponse'
+                          - type: object
+                            properties:
+                              content:
+                                type: array
+                                maxItems: 20
+                                items:
+                                  $ref: '#/components/schemas/MyBookmarkResponse'
+        '400':
+          $ref: './common.yaml#/components/responses/BadRequest'
+        '401':
+          $ref: './common.yaml#/components/responses/Unauthorized'
+
 components:
+  responses:
+    PostNotVisible:
+      description: "볼 수 없는 게시물 (비공개·관리자 숨김·원래 여행 휴지통·없는 게시물)"
+      content:
+        application/json:
+          schema:
+            $ref: './common.yaml#/components/schemas/ErrorResponse'
+          examples:
+            PUBLIC_POST_NOT_VISIBLE:
+              value: { success: false, data: { code: "PUBLIC_POST_NOT_VISIBLE", fieldErrors: [] }, message: "볼 수 없는 게시물이에요." }
+    CommunityFeatureRestricted:
+      description: "이용 제한 (COMMUNITY_FEATURE_RESTRICTED)"
+      content:
+        application/json:
+          schema:
+            $ref: './common.yaml#/components/schemas/ErrorResponse'
+          examples:
+            COMMUNITY_FEATURE_RESTRICTED:
+              value: { success: false, data: { code: "COMMUNITY_FEATURE_RESTRICTED", fieldErrors: [] }, message: "이용 제한 중에는 커뮤니티 기능을 쓸 수 없어요." }
+
   schemas:
     PostListResponse:
       type: object
@@ -430,3 +652,41 @@ components:
         walkSummary:
           type: [string, 'null']
           description: "도보 구간 요약 (대중교통일 때)"
+
+    LikeResponse:
+      type: object
+      description: "PUB-05 좋아요·취소 결과. 화면은 먼저 바꿔 보여 주고 이 값으로 맞춘다"
+      required: [liked, likeCount]
+      properties:
+        liked:
+          type: boolean
+        likeCount:
+          type: integer
+          minimum: 0
+
+    BookmarkResponse:
+      type: object
+      description: "PUB-06-01 북마크 저장·해제 결과"
+      required: [bookmarked]
+      properties:
+        bookmarked:
+          type: boolean
+
+    MyBookmarkResponse:
+      type: object
+      description: "PUB-06-02 내 북마크 카드 한 개. 볼 수 없게 된 게시물은 visible = false, post = null"
+      required: [bookmarkId, postId, visible, post, bookmarkedAt]
+      properties:
+        bookmarkId:
+          $ref: './common.yaml#/components/schemas/Id'
+        postId:
+          $ref: './common.yaml#/components/schemas/Id'
+        visible:
+          type: boolean
+        post:
+          description: "공개 목록 카드와 같은 값. 볼 수 없으면 null"
+          oneOf:
+            - $ref: '#/components/schemas/PostListResponse'
+            - type: 'null'
+        bookmarkedAt:
+          $ref: './common.yaml#/components/schemas/LocalDateTime'

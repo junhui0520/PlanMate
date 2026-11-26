@@ -2,9 +2,13 @@ package com.planmate.community.repository;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Optional;
+
+import jakarta.persistence.LockModeType;
 
 import org.springframework.data.domain.Limit;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -23,6 +27,11 @@ import com.planmate.community.entity.PublicPost;
  * 좋아요순 = 좋아요 많은 순 → 처음 게시 시각 늦은 순 → POST_ID 큰 순 (PUB-03-03)
  */
 public interface PublicPostRepository extends JpaRepository<PublicPost, Long> {
+
+    // PUB-05·06 좋아요·북마크 처리 중 게시물 행 잠금: 연타·동시 요청이 차례로 처리돼 좋아요 수가 두 번 오르지 않는다
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select p from PublicPost p where p.postId = :postId")
+    Optional<PublicPost> findByIdForUpdate(@Param("postId") Long postId);
 
     // PUB-03-01·03 최신순 첫 묶음
     @Query("""

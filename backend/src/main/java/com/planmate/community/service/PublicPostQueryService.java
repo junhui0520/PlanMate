@@ -20,6 +20,8 @@ import com.planmate.community.dto.PostDetailResponse;
 import com.planmate.community.dto.PostListResponse;
 import com.planmate.community.dto.PostSearchRequest;
 import com.planmate.community.entity.PublicPost;
+import com.planmate.community.repository.PostBookmarkRepository;
+import com.planmate.community.repository.PostLikeRepository;
 import com.planmate.community.repository.PublicPostRepository;
 
 import lombok.RequiredArgsConstructor;
@@ -43,6 +45,8 @@ public class PublicPostQueryService {
     private final AccountStatusChecker accountStatusChecker;
     // TODO(B에 요청): TripStatusReader 구현(TRIP.STATUS 조회). 없으면 목록·상세를 부를 때 오류를 낸다(TripAccessChecker와 같음).
     private final ObjectProvider<TripStatusReader> tripStatusReaderProvider;
+    private final PostLikeRepository postLikeRepository;
+    private final PostBookmarkRepository postBookmarkRepository;
 
     private enum Sort { LATEST, LIKES }
 
@@ -95,10 +99,17 @@ public class PublicPostQueryService {
     @Transactional(readOnly = true)
     public PostDetailResponse getPublicPostDetail(Long postId) {
         PublicPost post = publicPostRepository.findById(postId)
-                .filter(PublicPost::isOpen)
-                .filter(found -> !isTrashed(found.getTripId()))
+                .filter(this::isVisible)
                 .orElseThrow(() -> new BusinessException(ErrorCode.PUBLIC_POST_NOT_VISIBLE));
         return PostDetailResponse.of(post, viewer(post));
+    }
+
+    /**
+     * 공개 게시물로 보이는지: 공개이고, 관리자 숨김이 아니고, 원래 여행이 휴지통에 있지 않음.
+     * 좋아요(PUB-05-01)·북마크 저장(PUB-06-01)·내 북마크 카드(PUB-06-02)도 같은 조건을 쓴다.
+     */
+    public boolean isVisible(PublicPost post) {
+        return post.isOpen() && !isTrashed(post.getTripId());
     }
 
     // PUB-04-03 보는 사람 기준 표시 값
@@ -107,9 +118,11 @@ public class PublicPostQueryService {
         if (memberId.isEmpty()) {
             return PostDetailResponse.Viewer.GUEST;
         }
-        boolean mine = memberId.get().equals(post.getAuthorId());
-        // TODO(D): liked·bookmarked는 PUB-05·06(POST_LIKE·POST_BOOKMARK)을 만들 때 채운다. 지금은 false.
-        return new PostDetailResponse.Viewer(true, mine, false, false, isCommunityWritable(memberId.get()));
+        Long me = memberId.get();
+        boolean mine = me.equals(post.getAuthorId());
+        boolean liked = postLikeRepository.existsByPostIdAndMemberId(post.getPostId(), me); // 채워진 [좋아요]
+        boolean bookmarked = postBookmarkRepository.existsByPostIdAndMemberId(post.getPostId(), me); // 채워진 책갈피
+        return new PostDetailResponse.Viewer(true, mine, liked, bookmarked, isCommunityWritable(me));
     }
 
     // 이용 제한 회원이면 false (버튼 모두 비활성, 커뮤니티는 보기만)

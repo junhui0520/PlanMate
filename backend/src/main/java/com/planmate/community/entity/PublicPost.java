@@ -74,6 +74,16 @@ public class PublicPost {
     @Column(name = "UPDATED_AT")
     private LocalDateTime updatedAt;
 
+    /** PUB-05-01 좋아요 수 +1 (게시물 행을 잠근 뒤 부른다) */
+    public void increaseLikeCount() {
+        likeCount = likeCount + 1;
+    }
+
+    /** PUB-05-02 좋아요 수 -1, 0 아래로 내려가지 않음 (게시물 행을 잠근 뒤 부른다) */
+    public void decreaseLikeCount() {
+        likeCount = Math.max(0, likeCount - 1);
+    }
+
     /** 공개 상태이고 관리자 숨김이 아님 (원래 여행 휴지통 여부는 따로 B에게 묻는다) */
     public boolean isOpen() {
         return Boolean.TRUE.equals(isPublic) && !Boolean.TRUE.equals(adminHidden);

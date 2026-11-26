@@ -39,6 +39,8 @@ import com.planmate.community.dto.PostDetailResponse;
 import com.planmate.community.dto.PostListResponse;
 import com.planmate.community.dto.PostSearchRequest;
 import com.planmate.community.entity.PublicPost;
+import com.planmate.community.repository.PostBookmarkRepository;
+import com.planmate.community.repository.PostLikeRepository;
 import com.planmate.community.repository.PublicPostRepository;
 
 /**
@@ -51,6 +53,8 @@ class PublicPostQueryServiceTest {
 
     private PublicPostRepository repository;
     private AccountStatusChecker account;
+    private PostLikeRepository likes;
+    private PostBookmarkRepository bookmarks;
     private ObjectProvider<TripStatusReader> readerProvider;
     private final Set<Long> trashedTrips = new HashSet<>(); // 휴지통에 있는 원래 여행
     private PublicPostQueryService service;
@@ -66,7 +70,9 @@ class PublicPostQueryServiceTest {
                 : Optional.of(trashedTrips.contains(tripId) ? TripStatus.TRASHED : TripStatus.ACTIVE);
         readerProvider = mock(ObjectProvider.class);
         when(readerProvider.getIfAvailable()).thenReturn(reader);
-        service = new PublicPostQueryService(repository, account, readerProvider);
+        likes = mock(PostLikeRepository.class);
+        bookmarks = mock(PostBookmarkRepository.class);
+        service = new PublicPostQueryService(repository, account, readerProvider, likes, bookmarks);
     }
 
     // 게시물 한 개 (여행 ID = postId + 1000, 게시 시각은 postId가 클수록 늦게)
@@ -300,5 +306,27 @@ class PublicPostQueryServiceTest {
         assertTrue(v.loggedIn());
         assertFalse(v.mine());
         assertFalse(v.communityWritable());
+    }
+
+    @Test
+    void 로그인_회원이면_내_좋아요_북마크_여부를_채운다() {
+        when(account.findLoginMemberId()).thenReturn(Optional.of(ME));
+        when(repository.findById(3L)).thenReturn(Optional.of(open(3)));
+        when(likes.existsByPostIdAndMemberId(3L, ME)).thenReturn(true);
+        when(bookmarks.existsByPostIdAndMemberId(3L, ME)).thenReturn(false);
+
+        PostDetailResponse.Viewer v = service.getPublicPostDetail(3L).viewer();
+
+        assertTrue(v.liked());
+        assertFalse(v.bookmarked());
+    }
+
+    @Test
+    void 보이는지_검사는_공개_숨김_휴지통을_모두_본다() {
+        trashedTrips.add(1004L);
+        assertTrue(service.isVisible(open(3)));
+        assertFalse(service.isVisible(post(3, 0, false, false, 99L)));
+        assertFalse(service.isVisible(post(3, 0, true, true, 99L)));
+        assertFalse(service.isVisible(open(4)));
     }
 }
