@@ -14,6 +14,7 @@ import static org.mockito.Mockito.when;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Optional;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -258,6 +259,119 @@ class BudgetServiceTest {
 		assertEquals(TRIP, saved.getTripId());
 		assertEquals("JPY", saved.getCurrency());
 		assertEquals(0, new BigDecimal("2000").compareTo(saved.getAmount()));
+	}
+
+	// ==================== BUD-01-04 수정·삭제 ====================
+
+	private static final Long OTHER = 2L; // 다른 참여자
+
+	// DB에 이미 있는 항목 (가짜)
+	private BudgetItem existing(long itemId, Scope scope, Long tripId, Long owner, AmountSource source) {
+		BudgetItem item = BudgetItem.create(tripId, scope, Category.FOOD, "저녁 식사",
+				scope == Scope.COMMON ? CalcType.PER_PERSON : null, new BigDecimal("30000"), "KRW", source, null, owner);
+		ReflectionTestUtils.setField(item, "itemId", itemId);
+		when(repository.findById(itemId)).thenReturn(Optional.of(item));
+		return item;
+	}
+
+	@Test
+	void 공통_경비를_수정하면_고친_값으로_바뀐다() {
+		existing(3L, Scope.COMMON, TRIP, OTHER, AmountSource.MANUAL); // 다른 사람이 만든 공통 경비도 편집 참여자면 수정 가능
+		BudgetItemRequest req = new BudgetItemRequest(Scope.COMMON, Category.LODGING, " 숙소 ", CalcType.TOTAL,
+				new BigDecimal("40000"), false, "JPY", "3박");
+
+		BudgetItemResponse r = service.updateBudgetItem(TRIP, 3L, ME, true, req);
+
+		assertEquals("숙소", r.name());
+		assertEquals(Category.LODGING, r.category());
+		assertEquals(CalcType.TOTAL, r.calcType());
+		assertEquals("JPY", r.currency());
+		assertEquals("3박", r.memo());
+		assertEquals(OTHER, r.createdBy()); // 만든 사람은 그대로
+		verify(repository, never()).countByTripIdAndScope(anyLong(), any()); // 수정은 개수 제한을 보지 않음
+	}
+
+	@Test
+	void 내_개인_경비를_가격_확인_전으로_고칠_수_있다() {
+		existing(5L, Scope.PERSONAL, TRIP, ME, AmountSource.MANUAL);
+		BudgetItemRequest req = new BudgetItemRequest(Scope.PERSONAL, Category.ETC, "기념품", null, null, true, "JPY", null);
+
+		assertNull(service.updateBudgetItem(TRIP, 5L, ME, true, req).amount());
+	}
+
+	@Test
+	void 교통비로_들어온_항목도_고칠_수_있고_입력_방식은_그대로다() {
+		existing(1L, Scope.COMMON, TRIP, ME, AmountSource.ROUTE_FARE);
+		BudgetItemRequest req = new BudgetItemRequest(Scope.COMMON, Category.TRANSPORT, "1일차 교통비", CalcType.PER_PERSON,
+				new BigDecimal("500"), false, "JPY", null);
+
+		assertEquals(AmountSource.ROUTE_FARE, service.updateBudgetItem(TRIP, 1L, ME, true, req).amountSource());
+	}
+
+	@Test
+	void 수정도_추가와_같은_입력_규칙으로_검사한다() {
+		existing(3L, Scope.COMMON, TRIP, ME, AmountSource.MANUAL);
+
+		assertError(ErrorCode.BUDGET_NAME_REQUIRED,
+				() -> service.updateBudgetItem(TRIP, 3L, ME, true, common(" ", "100", "KRW")));
+		assertError(ErrorCode.BUDGET_AMOUNT_NEGATIVE,
+				() -> service.updateBudgetItem(TRIP, 3L, ME, true, common("점심", "-5", "KRW")));
+		assertError(ErrorCode.INVALID_INPUT,
+				() -> service.updateBudgetItem(TRIP, 3L, ME, true, common("점심", "10989011", "JPY"))); // 1억 초과
+	}
+
+	@Test
+	void 공통_개인_구분은_수정으로_바꿀_수_없다() {
+		existing(3L, Scope.COMMON, TRIP, ME, AmountSource.MANUAL);
+
+		assertError(ErrorCode.INVALID_INPUT, () -> service.updateBudgetItem(TRIP, 3L, ME, true, personal("점심", "100", "KRW")));
+	}
+
+	@Test
+	void 없거나_다른_여행의_항목이면_이미_삭제된_경비예요() {
+		when(repository.findById(99L)).thenReturn(Optional.empty());
+		existing(7L, Scope.COMMON, 2L, ME, AmountSource.MANUAL); // 다른 여행(2)의 항목
+
+		assertError(ErrorCode.BUDGET_ITEM_NOT_FOUND, () -> service.updateBudgetItem(TRIP, 99L, ME, true, common("점심", "1", "KRW")));
+		assertError(ErrorCode.BUDGET_ITEM_NOT_FOUND, () -> service.deleteBudgetItem(TRIP, 99L, ME, true));
+		assertError(ErrorCode.BUDGET_ITEM_NOT_FOUND, () -> service.deleteBudgetItem(TRIP, 7L, ME, true));
+		assertEquals("이미 삭제된 경비예요.", ErrorCode.BUDGET_ITEM_NOT_FOUND.getMessage());
+	}
+
+	@Test
+	void 남의_개인_경비는_소유자도_고치거나_지울_수_없다() {
+		existing(7L, Scope.PERSONAL, TRIP, OTHER, AmountSource.MANUAL);
+
+		assertError(ErrorCode.BUDGET_EDIT_FORBIDDEN,
+				() -> service.updateBudgetItem(TRIP, 7L, ME, true, personal("유심", "100", "KRW")));
+		assertError(ErrorCode.BUDGET_EDIT_FORBIDDEN, () -> service.deleteBudgetItem(TRIP, 7L, ME, true));
+		assertEquals("이 경비를 고칠 권한이 없어요.", ErrorCode.BUDGET_EDIT_FORBIDDEN.getMessage());
+	}
+
+	@Test
+	void 조회_참여자는_공통도_내_개인도_고치거나_지울_수_없다() {
+		existing(3L, Scope.COMMON, TRIP, ME, AmountSource.MANUAL);
+		existing(5L, Scope.PERSONAL, TRIP, ME, AmountSource.MANUAL);
+
+		assertError(ErrorCode.BUDGET_EDIT_FORBIDDEN, () -> service.deleteBudgetItem(TRIP, 3L, ME, false));
+		assertError(ErrorCode.BUDGET_EDIT_FORBIDDEN, () -> service.deleteBudgetItem(TRIP, 5L, ME, false));
+	}
+
+	@Test
+	void 삭제하면_DB에서_지운다() {
+		BudgetItem item = existing(1L, Scope.COMMON, TRIP, ME, AmountSource.ROUTE_FARE); // 교통비 항목도 삭제 가능
+
+		service.deleteBudgetItem(TRIP, 1L, ME, true);
+
+		verify(repository).delete(item); // 구간 연결 기록은 DB가 함께 지움(ON DELETE CASCADE)
+	}
+
+	@Test
+	void 권한이_없으면_지우지_않는다() {
+		existing(7L, Scope.PERSONAL, TRIP, OTHER, AmountSource.MANUAL);
+
+		assertThrows(BusinessException.class, () -> service.deleteBudgetItem(TRIP, 7L, ME, true));
+		verify(repository, never()).delete(any(BudgetItem.class));
 	}
 
 }

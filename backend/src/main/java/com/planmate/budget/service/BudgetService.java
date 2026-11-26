@@ -81,6 +81,57 @@ public class BudgetService {
 		return BudgetItemResponse.from(saved);
 	}
 
+	/**
+	 * BUD-01-04 경비 항목 수정. 입력 규칙은 추가(BUD-01-02)와 같고, 개수 제한은 보지 않는다.
+	 * 동시 수정은 나중에 저장한 값으로 덮어쓴다(COL-06-02).
+	 * TODO(A에 요청): memberId·canEdit은 로그인 정보·TripAccessChecker (저장 직전 역할 재확인, 휴지통 여행 막기).
+	 *                 수정 주소(PUT /api/trips/{tripId}/budget-items/{itemId})는 그때 연다.
+	 * TODO(B에 요청): 저장 후 다른 참여자 화면 반영은 SyncService (COL-06-01)
+	 */
+	@Transactional
+	public BudgetItemResponse updateBudgetItem(Long tripId, Long itemId, Long memberId, boolean canEdit,
+			BudgetItemRequest req) {
+		BudgetItem item = findEditableItem(tripId, itemId, memberId, canEdit);
+		// 구분(공통·개인)은 수정으로 바꿀 수 없음
+		if (req.scope() != item.getScope() || req.category() == null) {
+			throw new BusinessException(ErrorCode.INVALID_INPUT);
+		}
+		boolean common = item.getScope() == Scope.COMMON;
+
+		String name = checkName(req.name());
+		String memo = checkMemo(common, req.memo());
+		checkCalcType(common, req.calcType());
+		String currency = checkCurrency(req.currency());
+		BigDecimal amount = checkAmount(req.amount(), req.priceUnknown(), currency);
+
+		item.update(req.category(), name, common ? req.calcType() : null, amount, currency, memo);
+		return BudgetItemResponse.from(item);
+	}
+
+	/**
+	 * BUD-01-04 경비 항목 삭제. 교통비로 반영된 항목이면 구간 연결 기록(FARE_EXPENSE_LINK)도
+	 * DB의 ON DELETE CASCADE로 함께 삭제된다(RTE-03-02).
+	 * TODO(A에 요청): memberId·canEdit은 로그인 정보·TripAccessChecker. 삭제 주소(DELETE ...)는 그때 연다.
+	 * TODO(B에 요청): 삭제 후 다른 참여자 화면 반영은 SyncService (COL-06-01)
+	 */
+	@Transactional
+	public void deleteBudgetItem(Long tripId, Long itemId, Long memberId, boolean canEdit) {
+		budgetItemRepository.delete(findEditableItem(tripId, itemId, memberId, canEdit));
+	}
+
+	// BUD-01-04 없거나 다른 여행의 항목이면 "이미 삭제된 경비예요.",
+	// 공통은 소유자·편집 참여자만, 개인은 주인 본인만(주인이 소유자·편집 참여자일 때) — 아니면 "이 경비를 고칠 권한이 없어요."
+	private BudgetItem findEditableItem(Long tripId, Long itemId, Long memberId, boolean canEdit) {
+		BudgetItem item = budgetItemRepository.findById(itemId)
+				.filter(found -> found.getTripId().equals(tripId))
+				.orElseThrow(() -> new BusinessException(ErrorCode.BUDGET_ITEM_NOT_FOUND));
+		boolean ownPersonal = item.getScope() == Scope.PERSONAL && memberId.equals(item.getCreatedBy());
+		if (!canEdit || (item.getScope() == Scope.PERSONAL && !ownPersonal)) {
+			throw new BusinessException(ErrorCode.BUDGET_EDIT_FORBIDDEN); // 소유자도 남의 개인 경비는 불가
+		}
+		return item;
+	}
+
 	// 항목명: 필수, 앞뒤 공백 제거 후 1~50자(코드 포인트, 화면 countChars와 같음), 제어문자 불가
 	private String checkName(String raw) {
 		if (raw == null || raw.isBlank()) {

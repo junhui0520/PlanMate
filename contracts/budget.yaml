@@ -11,6 +11,14 @@ info:
       여행 인원(B의 TripService)과 로그인(A의 pjh/security)이 생긴 뒤 연다.
     - BUD-01-02 추가(BudgetItemRequest → BudgetItemResponse)도 요청 모양만 정해 두었다.
       주소(POST /api/trips/{tripId}/budget-items 예정)는 로그인(A의 pjh/security)이 생긴 뒤 연다.
+    - BUD-01-04 수정·삭제도 로그인이 생긴 뒤 연다. 예정 주소와 규칙:
+      - 수정 PUT /api/trips/{tripId}/budget-items/{itemId}: 요청은 BudgetItemRequest(scope는 원래 값과 같아야 함), 응답은 BudgetItemResponse
+      - 삭제 DELETE /api/trips/{tripId}/budget-items/{itemId}: 응답 data는 null
+      - 입력 규칙은 추가와 같고 개수 제한은 보지 않는다. 동시 수정은 나중에 저장한 값으로 덮어쓴다(버전 칸 없음).
+      - 없거나 다른 여행의 항목이면 BUDGET_ITEM_NOT_FOUND(404) "이미 삭제된 경비예요."
+      - 공통은 소유자·편집 참여자, 개인은 주인 본인만. 아니면 BUDGET_EDIT_FORBIDDEN(403) "이 경비를 고칠 권한이 없어요."
+      - 교통비로 반영된 항목(ROUTE_FARE)도 고치거나 지울 수 있고, 고쳐도 amountSource는 그대로다.
+        지우면 구간 연결 기록(FARE_EXPENSE_LINK)은 DB가 함께 지운다.
     - 여행 인원·참여자 닉네임·내 역할·여행 통화는 경비 API가 주지 않는다(A·B 파트 데이터).
 
 servers:

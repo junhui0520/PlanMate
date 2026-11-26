@@ -105,4 +105,18 @@ public class BudgetItem {
 		return item;
 	}
 
+	/**
+	 * BUD-01-04 항목 수정. 구분(공통·개인)·여행·만든 사람·금액 입력 방식은 바꾸지 않는다.
+	 * 정한 내용(11/26): 교통비로 들어온 항목(ROUTE_FARE)을 고쳐도 금액 입력 방식은 그대로 둔다.
+	 * 동시 수정은 나중에 저장한 값으로 덮어쓴다(버전 칸 없음, COL-06-02).
+	 */
+	public void update(Category category, String name, CalcType calcType, BigDecimal amount, String currency, String memo) {
+		this.category = category;
+		this.name = name;
+		this.calcType = calcType;
+		this.amount = amount;
+		this.currency = currency;
+		this.memo = memo;
+	}
+
 }
