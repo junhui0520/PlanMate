@@ -96,7 +96,10 @@ E 파트 기능은 A 파트 팀원이 구현한다. 그래서 담당은 A·B·C�
 
 ### 응답·에러
 - 모든 응답은 `ApiResponse {success, data, message}`, 목록은 `PageResponse`.
+  - 실패하면 `data`에 `{code, fieldErrors}`가 들어간다. code는 ErrorCode 이름이다(형식은 contracts/common.yaml).
 - 규칙 위반은 `throw new BusinessException(ErrorCode.XXX)`. 안내 문구는 기능정의서 "예외·오류 안내 문구"를 그대로 ErrorCode에 넣는다.
+  - ErrorCode는 `ErrorCode.java`의 자기 파트 구역(`// ===== B 파트 ...`)에만 추가한다. 공통 파일이라 추가 전에 팀에 공유한다.
+  - 입력 검증은 `@Valid @RequestBody` DTO로 하고, 검증 어노테이션 `message`에 기능정의서 문구를 넣는다.
 - try-catch로 에러를 삼키지 않는다. `GlobalExceptionHandler`가 한곳에서 바꾼다.
 
 ### JPA·DB
@@ -110,7 +113,7 @@ E 파트 기능은 A 파트 팀원이 구현한다. 그래서 담당은 A·B·C�
 - VERSION 칸(VISIT, VISIT_MEMO)에 JPA `@Version`을 쓰지 않는다. 동시 수정은 나중에 저장한 값으로 덮어쓰는 규칙이라 서비스에서 저장할 때 직접 +1 한다.
 - 자식 행 삭제는 DB의 ON DELETE CASCADE / SET NULL에 맡긴다. JPA `CascadeType.REMOVE`·`orphanRemoval`로 같은 일을 또 하지 않는다.
 - 유일 조건 위반(`DataIntegrityViolationException`)은 잡아서 맞는 ErrorCode로 바꾼다. 조건부 유일 인덱스(여행당 OWNER 1명, 대기 소유권 이전 1건, 소셜 회원)는 DB에만 있으니 서비스에서도 먼저 검사한다.
-- 같은 요청 두 번 처리 방지(여행 생성·일정 저장·게시·복제·AI 적용)는 `common/duplicate/DuplicateRequestChecker`를 쓴다. 요청 식별값은 화면이 만들어 보낸다.
+- 같은 요청 두 번 처리 방지(여행 생성·일정 저장·게시·복제·AI 적용)는 `common/duplicate/DuplicateRequestChecker`를 쓴다. 요청 식별값은 화면이 만들어 요청 본문 `requestKey`(1~64자, UUID 권장)로 보낸다. 서비스의 `@Transactional` 안에서 `findProcessed(requestKey, memberId)` → 업무 처리 → `record(requestKey, memberId, tripId)` 순서로 부른다.
 
 ### 다른 파트 데이터
 - 다른 파트 테이블은 직접 조회·수정하지 않는다. 그 파트의 Service 메서드를 부른다(8번 표).
@@ -134,13 +137,15 @@ E 파트 기능은 A 파트 팀원이 구현한다. 그래서 담당은 A·B·C�
 - 키·비밀번호는 코드에 쓰지 않는다. application.yml에서 `${환경변수}`로 읽는다. 이름은 `.env.example`을 따르고, 새로 필요하면 `.env.example`에 이름만(값 없이) 추가하고 팀에 알린다.
 - REST API 키(카카오 REST, 구글 장소·경로, 한국수출입은행, AI 등)는 서버에서만 쓴다. 화면에는 지도 표시용 JavaScript 키만 둔다(`VITE_`로 시작, 허용 도메인 제한).
 - 외부 API는 각 기능의 client/에서만 부른다.
-- 비밀번호·인증번호·세션·소셜 토큰·초대 토큰 원문을 로그·URL·에러 응답에 남기지 않는다.
+- 비밀번호·인증번호·세션·소셜 토큰·초대 토큰 원문을 로그·URL·에러 응답에 남기지 않는다. 단, 서비스 초대 링크(`/invite/:token`) 자체에는 초대 토큰이 들어간다. 그 밖의 URL 매개변수·로그·에러 응답에는 남기지 않는다.
 
 ## 7. 프론트 규칙
 
 - 서버 호출은 `shared/api/client.ts`를 거친다(서버 주소·로그인 쿠키·공통 에러 처리). 각 기능은 `api/<기능>Api.ts`에 함수로 둔다.
+- `VITE_` 환경변수는 `frontend/.env.local`에 둔다(Vite는 레포 맨 위 .env를 읽지 않는다).
 - 실시간 연결은 `shared/api/websocket.ts`를 거친다.
-- 공통 부품(Button, Input, Modal, ConfirmDialog, Toast, Loading, EmptyState)은 `shared/components` 것을 쓴다. 기능 폴더에 같은 부품을 또 만들지 않는다.
+- 공통 부품(Button, Input, Modal, ConfirmDialog, Toast, Loading, EmptyState)은 `shared/components` 것을 쓴다. 기능 폴더에 같은 부품을 또 만들지 않는다. 상태 창은 `useToast()`(`shared/hooks/useToast.ts`)로 띄운다.
+- 화면 주소는 `app/router.tsx`에 모여 있다. 자기 page를 만들면 자기 경로 줄의 `element`만 page 컴포넌트로 바꾼다.
 - 지도는 C의 `features/place/components/MapView.tsx`만 쓴다.
 - 날짜·금액 표시 함수는 `shared/utils`(date.ts, money.ts)에 모은다. 형식은 기능정의서 "화면 표시"를 따른다.
 - `any`를 쓰지 않는다. 서버 응답 타입은 contracts에 맞춰 api 파일에 적는다.
@@ -175,6 +180,7 @@ E 파트 기능은 A 파트 팀원이 구현한다. 그래서 담당은 A·B·C�
 
 - 내 파트 폴더만 고친다.
 - 다른 파트 폴더, common/, shared/, app/, build.gradle, package.json, application.yml, schema.sql, contracts/common.yaml, AGENTS.md, CLAUDE.md, docs/는 사람이 시킬 때만 고친다. 고칠 때는 "팀에 먼저 공유해야 하는 파일"이라고 알린다.
+  - 예외: `app/router.tsx`에서 자기 page 경로의 `element`를 바꾸는 것은 허용한다. 경로 추가·변경은 사람이 시킬 때만 한다.
 - DB 컬럼이 더 필요하면 코드보다 DB설계서·ERD를 먼저 고쳐야 한다고 사람에게 알린다.
 - API를 새로 만들거나 바꾸면 `contracts/<기능>.yaml`도 같이 고친다.
 - 한 번에 세부 기능 하나씩 작업한다. 기능정의서에 없는 기능을 더하지 않는다.

@@ -1,6 +1,7 @@
 # PlanMate 폴더 구조
 
 기준: 세부기능정의서 v33 (세부 기능 142개), DB설계서 v7 (테이블 38개)
+화면 기준: Figma 최종 와이어프레임 다섯번째 페이지 (기능정의서 v28 기준으로 그려짐, 다르면 v33 우선)
 백엔드 Spring Boot + JPA + Oracle, 프론트 React + TypeScript
 
 ```
@@ -437,7 +438,7 @@ PlanMate/
 │       ├── app/                                      # 앱 전체 설정
 │       │   ├── main.tsx                              # 앱 시작점
 │       │   ├── App.tsx                               # 최상위 화면
-│       │   ├── router.tsx                            # 화면 주소 목록 (/trips, /login ...)
+│       │   ├── router.tsx                            # 화면 주소 목록 (각 파트는 자기 page 줄의 element만 교체)
 │       │   └── layouts/
 │       │       ├── MainLayout.tsx                    # 상단 메뉴·알림 아이콘 등 공통 틀
 │       │       └── AdminLayout.tsx                   # 관리자 화면 공통 틀
@@ -480,11 +481,10 @@ PlanMate/
 │       │   │   └── api/
 │       │   │       └── participantApi.ts             # 초대·참여자·소유권 서버 호출
 │       │   ├── notification/                         # [A]
-│       │   │   ├── pages/
-│       │   │   │   └── NotificationPage.tsx          # 알림함
 │       │   │   ├── components/
 │       │   │   │   ├── NotificationBell.tsx          # 상단 알림 아이콘·안 읽은 개수 배지
-│       │   │   │   └── NotificationItem.tsx          # 알림 한 개 (누르면 대상으로 이동)
+│       │   │   │   ├── NotificationItem.tsx          # 알림 한 개 (누르면 대상으로 이동)
+│       │   │   │   └── NotificationPanel.tsx         # 알림함 (A-16, 지금 화면 위에 덮어서 열림, SUP-03-01)
 │       │   │   ├── api/
 │       │   │   │   └── notificationApi.ts            # 알림 서버 호출
 │       │   │   └── hooks/
@@ -647,13 +647,14 @@ PlanMate/
 │           │   ├── Loading.tsx                       # 로딩 표시
 │           │   └── EmptyState.tsx                    # 내용이 없을 때 표시
 │           ├── hooks/
-│           │   └── useDebounce.ts                    # 입력이 멈춘 뒤 검색하기 (자동완성용)
+│           │   ├── useDebounce.ts                    # 입력이 멈춘 뒤 검색하기 (자동완성용)
+│           │   └── useToast.ts                       # 상태 창 띄우기 (ToastContext·useToast, oxlint 규칙 때문에 Toast.tsx에서 분리)
 │           ├── utils/
 │           │   ├── date.ts                           # 날짜·시간 표시 형식
 │           │   ├── money.ts                          # 금액·통화 표시 형식
 │           │   └── validation.ts                     # 공통 입력 검사
 │           └── styles/
-│               ├── global.css                        # 전체 기본 스타일
+│               ├── global.css                        # 전체 기본 스타일 + 공통 부품·레이아웃 클래스(pm- 접두사)
 │               └── variables.css                     # 색·글자 크기 같은 공통 값
 ├── .env.example                                      # 환경 변수 이름 목록 (값은 비워서 올림)
 ├── .gitignore                                        # git에 올리지 않을 파일 목록
@@ -692,7 +693,8 @@ PlanMate/
 
 ## 팀에서 확인할 것
 
-- 프론트 pages/와 components/ 구분은 와이어프레임에서 주소가 따로 있는 화면인지에 따라 바꿈 (주소가 바뀌면 pages, 안 바뀌면 components)
-- contracts/ 작성 형식(OpenAPI 등)은 구조를 만든 팀원과 맞춤
+- 프론트 pages/와 components/ 구분은 Figma 다섯번째 페이지 기준으로 정함(주소가 바뀌면 pages, 안 바뀌면 components, 덮개 창·팝업 창은 components). 경로 목록은 frontend/src/app/router.tsx
+- contracts/는 OpenAPI 3.1.0 YAML. 공통 응답·실패 응답·RequestKey·Page/Size는 contracts/common.yaml을 $ref로 가져다 씀
 - 패키지 이름 com.planmate, 폴더 이름(auth, collab, cs 등)은 팀에서 바꿔도 됨
 - 새 폴더에는 .gitkeep을 넣고, 실제 파일이 생기면 지움
+- 팀 확인 대기: API 주소 앞 /api 접두사, C-12 추천안 비교(새 페이지) page 파일, E-09·E-11 상세 경로, 여행 탭 주소 방식(지금은 경비만 /trips/:tripId/budget)
