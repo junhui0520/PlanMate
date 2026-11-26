@@ -132,13 +132,16 @@ public class BudgetSummaryService {
 
 	// BUD-04-02 통화 표준 자릿수 (엔·원 0자리, 달러·유로 2자리)
 	static BigDecimal round(BigDecimal amount, String currency) {
-		int digits;
+		return amount.setScale(currencyDigits(currency), RoundingMode.HALF_UP);
+	}
+
+	// 통화 표준 자릿수: 엔·원 0, 달러·유로 2 (모르는 통화 코드는 2)
+	static int currencyDigits(String currency) {
 		try {
-			digits = Math.max(0, Currency.getInstance(currency).getDefaultFractionDigits());
+			return Math.max(0, Currency.getInstance(currency).getDefaultFractionDigits());
 		} catch (IllegalArgumentException e) {
-			digits = 2; // 모르는 통화 코드
+			return 2;
 		}
-		return amount.setScale(digits, RoundingMode.HALF_UP);
 	}
 
 	private static String currencyOf(BudgetItem item) {

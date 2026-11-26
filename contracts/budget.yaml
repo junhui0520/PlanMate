@@ -9,6 +9,8 @@ info:
     - 지금 있는 API: BUD-01-01 경비 목록. 다른 기능은 만들 때 이 파일에 더한다.
     - BUD-03 합계(BudgetSummaryResponse)는 응답 모양만 정해 두었다. 주소(GET /api/trips/{tripId}/budget-summary 예정)는
       여행 인원(B의 TripService)과 로그인(A의 pjh/security)이 생긴 뒤 연다.
+    - BUD-01-02 추가(BudgetItemRequest → BudgetItemResponse)도 요청 모양만 정해 두었다.
+      주소(POST /api/trips/{tripId}/budget-items 예정)는 로그인(A의 pjh/security)이 생긴 뒤 연다.
     - 여행 인원·참여자 닉네임·내 역할·여행 통화는 경비 API가 주지 않는다(A·B 파트 데이터).
 
 servers:
@@ -105,6 +107,52 @@ components:
           amountSource: MANUAL
           memo: "3박, 조식 포함"
           createdBy: 1
+
+    # ---- BUD-01-02 경비 항목 추가 ----
+    BudgetItemRequest:
+      type: object
+      description: |
+        경비 항목 추가 입력값. 만든 사람은 보내지 않는다(서버가 로그인 정보로 채움).
+        서버도 화면과 같은 규칙으로 다시 검사한다. 오류 응답은 common.yaml ErrorResponse 모양.
+        - 항목명이 비면 BUDGET_NAME_REQUIRED "항목명을 입력해 주세요."
+        - 금액도 '가격 확인 전'도 없으면 BUDGET_AMOUNT_REQUIRED "금액을 입력하거나 '가격 확인 전'을 선택해 주세요."
+        - 금액이 음수면 BUDGET_AMOUNT_NEGATIVE "0 이상으로 입력해 주세요."
+        - 공통 경비가 여행에 200개면 BUDGET_COMMON_LIMIT, 내 개인 경비가 200개면 BUDGET_PERSONAL_LIMIT
+        - 조회 참여자가 공통 경비를 추가하면 BUDGET_COMMON_EDIT_FORBIDDEN, 개인 경비면 EDIT_PERMISSION_CHANGED
+        - 그 밖에 화면이 먼저 막는 값(글자 수 초과, 제어문자, 통화 자릿수 초과, 원화 기준 1억 초과,
+          환율 없는 통화, 개인 경비의 메모·계산 방식, 금액과 priceUnknown을 함께 보냄)은 INVALID_INPUT
+      required: [scope, category, name, priceUnknown, currency]
+      properties:
+        scope:
+          type: string
+          description: "누른 버튼으로 정해짐 (공통 / 내 개인)"
+          enum: [COMMON, PERSONAL]
+        category:
+          type: string
+          enum: [TRANSPORT, LODGING, FOOD, SIGHTSEEING, ETC]
+        name:
+          type: string
+          description: "앞뒤 공백 제거 후 1~50자 (코드 포인트, 이모지 1자), 제어문자 불가"
+          example: 저녁 식사
+        calcType:
+          type: [string, "null"]
+          description: "공통 경비면 꼭 채움, 개인 경비면 null"
+          enum: [TOTAL, PER_PERSON, null]
+        amount:
+          type: [number, "null"]
+          description: "0 이상, 원화 기준 1억 이하, 통화 표준 자릿수까지(엔·원 정수, 달러·유로 소수 2자리). priceUnknown이면 null"
+          example: 30000
+        priceUnknown:
+          type: boolean
+          description: "'가격 확인 전' 선택. true면 amount는 null (0원으로 저장하지 않음)"
+          example: false
+        currency:
+          type: string
+          description: "원화 또는 오늘 환율이 있는 통화 (기본값은 여행 도시 통화, 화면이 채움)"
+          example: KRW
+        memo:
+          type: [string, "null"]
+          description: "공통 경비만 0~200자, 제어문자 불가"
 
     # ---- BUD-03 경비 합계 (계산은 서버에서만) ----
     BudgetSummaryResponse:
