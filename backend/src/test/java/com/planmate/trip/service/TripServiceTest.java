@@ -5,6 +5,7 @@ import com.planmate.common.duplicate.RequestLog;
 import com.planmate.common.exception.BusinessException;
 import com.planmate.common.exception.ErrorCode;
 import com.planmate.common.util.DateTimeUtil;
+import com.planmate.trip.dto.TripBasicInfo;
 import com.planmate.trip.dto.TripCreateRequest;
 import com.planmate.trip.dto.TripCreateResponse;
 import com.planmate.trip.entity.City;
@@ -199,6 +200,28 @@ class TripServiceTest {
         assertThat(response.tripId()).isEqualTo(NEW_TRIP_ID);
         then(tripRepository).should(never()).saveAndFlush(any());
         then(tripDayRepository).should(never()).saveAllAndFlush(anyList());
+    }
+
+    @Test
+    void 기본_정보는_인원_날짜_도시_나라_코드를_돌려준다() {
+        Trip trip = Trip.create("서울 여행", CITY_ID, LocalDate.of(2027, 1, 10), LocalDate.of(2027, 1, 12), 4, MEMBER_ID);
+        given(tripRepository.findById(NEW_TRIP_ID)).willReturn(Optional.of(trip));
+        given(cityService.getCity(CITY_ID)).willReturn(seoul);
+
+        Optional<TripBasicInfo> info = tripService.findBasicInfo(NEW_TRIP_ID);
+
+        assertThat(info).isPresent();
+        assertThat(info.get().peopleCount()).isEqualTo(4);
+        assertThat(info.get().startDate()).isEqualTo(LocalDate.of(2027, 1, 10));
+        assertThat(info.get().endDate()).isEqualTo(LocalDate.of(2027, 1, 12));
+        assertThat(info.get().countryCode()).isEqualTo("KR");
+    }
+
+    @Test
+    void 없는_여행의_기본_정보는_빈_값() {
+        given(tripRepository.findById(99L)).willReturn(Optional.empty());
+
+        assertThat(tripService.findBasicInfo(99L)).isEmpty();
     }
 
     // ===== 도우미 =====

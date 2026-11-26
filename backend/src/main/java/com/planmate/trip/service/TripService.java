@@ -5,6 +5,7 @@ import com.planmate.common.duplicate.RequestLog;
 import com.planmate.common.exception.BusinessException;
 import com.planmate.common.exception.ErrorCode;
 import com.planmate.common.util.DateTimeUtil;
+import com.planmate.trip.dto.TripBasicInfo;
 import com.planmate.trip.dto.TripCreateRequest;
 import com.planmate.trip.dto.TripCreateResponse;
 import com.planmate.trip.dto.TripCreationCheckResponse;
@@ -88,6 +89,20 @@ public class TripService {
         // 6) 처리 성공 기록 (같은 트랜잭션 안에서 불러야 함)
         duplicateRequestChecker.record(req.requestKey(), memberId, trip.getTripId());
         return new TripCreateResponse(trip.getTripId());
+    }
+
+    /**
+     * 여행 기본 정보 (D 파트 경비가 사용). 인원·시작일·종료일·여행 도시의 나라 코드.
+     * 권한 검사는 부르는 쪽(D)에서 한다. 여행이 없으면 Optional.empty()
+     */
+    @Transactional(readOnly = true)
+    public Optional<TripBasicInfo> findBasicInfo(Long tripId) {
+        return tripRepository.findById(tripId)
+                .map(trip -> new TripBasicInfo(
+                        trip.getPeopleCount(),
+                        trip.getStartDate(),
+                        trip.getEndDate(),
+                        cityService.getCity(trip.getCityId()).getCountryCode().trim())); // CHAR(2)
     }
 
     /*
