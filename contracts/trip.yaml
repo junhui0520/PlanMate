@@ -1,0 +1,442 @@
+openapi: 3.1.0
+
+info:
+  title: "PlanMate 여행 API 약속 (B 파트)"
+  version: "0.1.0"
+  description: |
+    여행 생성·목록·수정·삭제 API 약속. 기준: 세부기능정의서 v33 TRP-01~05, DB설계서 v7 TRIP·TRIP_DAY·CITY.
+    응답·에러·날짜 형식은 `contracts/common.yaml`을 따른다.
+    - 지금 있는 API: TRP-01 여행 생성 (01-01 생성 가능 확인, 01-02 도시 검색·선택, 01-03 여행 생성 저장)
+    - 다른 기능(TRP-02~05)은 만들 때 이 파일에 더한다.
+
+    ## 이 파일에서 쓰는 B 파트 에러 코드
+    | 상수 | HTTP 상태 | 문구 | 기능 ID |
+    |---|---|---|---|
+    | TRIP_LIMIT_EXCEEDED | 409 | 참여 중인 여행을 포함해 여행은 최대 3개까지 가질 수 있어요. 기존 여행을 삭제하거나 나가면 더 만들 수 있어요. | TRP-01-01·03 |
+    | CITY_SEARCH_FAILED | 502 | 도시를 검색하지 못했어요. 다시 시도해 주세요. | TRP-01-02 |
+    | CITY_INFO_FAILED | 502 | 도시 정보를 불러오지 못했어요. 다시 시도해 주세요. | TRP-01-02 |
+    | TRIP_CREATE_FAILED | 500 | 여행을 만들지 못했어요. 잠시 후 다시 시도해 주세요. | TRP-01-03 |
+
+servers:
+  - url: http://localhost:8080
+    description: "로컬 개발 (VITE_API_BASE_URL과 같은 값)"
+
+tags:
+  - name: trip
+    description: "여행 관리 (TRP)"
+  - name: city
+    description: "도시 검색·선택 (TRP-01-02)"
+
+paths:
+  /api/trips/creation-check:
+    get:
+      tags: [trip]
+      operationId: checkTripCreatable
+      summary: "TRP-01-01 여행 생성 가능 확인"
+      description: |
+        '새 여행 만들기'를 누르면 생성 화면을 열기 전에 부른다.
+        내가 참여 중인 활성 여행(TRIP_MEMBER의 내 행 중 TRIP.STATUS = ACTIVE, 역할 OWNER·EDITOR·VIEWER 모두)이 3개 미만이면 성공,
+        3개면 TRIP_LIMIT_EXCEEDED(409)를 돌려준다. 화면은 409를 받으면 생성 화면을 열지 않고 안내 창을 띄운다.
+        권한: 로그인 회원(이용 제한 회원 포함).
+      responses:
+        '200':
+          description: "만들 수 있음"
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: './common.yaml#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/TripCreationCheckResponse'
+              examples:
+                OK:
+                  value:
+                    success: true
+                    data:
+                      activeTripCount: 2
+                      maxTripCount: 3
+                    message: null
+        '401':
+          $ref: './common.yaml#/components/responses/Unauthorized'
+        '409':
+          $ref: '#/components/responses/TripLimitExceeded'
+
+  /api/cities/search:
+    get:
+      tags: [city]
+      operationId: searchCities
+      summary: "TRP-01-02 도시 검색"
+      description: |
+        도시 이름으로 전 세계 도시를 검색한다(구글 장소 자동완성, 도시와 국가를 함께 검색 - C 파트 client 사용).
+        화면은 입력이 멈추고 0.3초 뒤에 부른다. 결과는 최대 3개. 이 API는 DB에 저장하지 않는다.
+        결과가 없으면 빈 배열(화면 문구: "일치하는 도시가 없어요.").
+        권한: 로그인 회원.
+      parameters:
+        - name: keyword
+          in: query
+          required: true
+          description: "도시 검색어. 앞뒤 공백 제거 후 1~50자"
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 50
+          example: "도쿄"
+      responses:
+        '200':
+          description: "검색 결과 (최대 3개, 없으면 빈 배열)"
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: './common.yaml#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        maxItems: 3
+                        items:
+                          $ref: '#/components/schemas/CitySearchResponse'
+              examples:
+                OK:
+                  value:
+                    success: true
+                    data:
+                      - googlePlaceId: "ChIJXSModoWLGGARILWiCfeu2M0"
+                        cityName: "도쿄"
+                        countryName: "일본"
+                    message: null
+        '400':
+          $ref: './common.yaml#/components/responses/BadRequest'
+        '401':
+          $ref: './common.yaml#/components/responses/Unauthorized'
+        '502':
+          description: "구글 검색 실패 (CITY_SEARCH_FAILED)"
+          content:
+            application/json:
+              schema:
+                $ref: './common.yaml#/components/schemas/ErrorResponse'
+              examples:
+                CITY_SEARCH_FAILED:
+                  value:
+                    success: false
+                    data:
+                      code: "CITY_SEARCH_FAILED"
+                      fieldErrors: []
+                    message: "도시를 검색하지 못했어요. 다시 시도해 주세요."
+
+  /api/cities:
+    post:
+      tags: [city]
+      operationId: selectCity
+      summary: "TRP-01-02 도시 선택 (처음 고른 도시면 자동 등록)"
+      description: |
+        검색 결과에서 도시 1개를 고르면 부른다.
+        - CITY에 같은 GOOGLE_PLACE_ID가 있으면 그 도시를 그대로 돌려준다.
+        - 없으면 새로 등록한다: 국가가 대한민국(KR)이면 MAP_PROVIDER = KAKAO, 그 밖은 GOOGLE.
+          중심 좌표와 시간대(IANA 이름, 구글 시간대 API)를 함께 저장한다 - C 파트 client 사용.
+        - 시간대를 가져오지 못하면 등록하지 않고 CITY_INFO_FAILED(502). 화면은 '여행 만들기' 버튼을 비활성으로 둔다.
+        권한: 로그인 회원.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CitySelectRequest'
+      responses:
+        '200':
+          description: "선택한 도시 정보"
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: './common.yaml#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/CityResponse'
+              examples:
+                OK:
+                  value:
+                    success: true
+                    data:
+                      cityId: 1
+                      nameKo: "도쿄"
+                      nameEn: "Tokyo"
+                      countryCode: "JP"
+                      timezone: "Asia/Tokyo"
+                      utcOffset: "+09:00"
+                      mapProvider: "GOOGLE"
+                      centerLat: 35.6764225
+                      centerLng: 139.650027
+                    message: null
+        '400':
+          $ref: './common.yaml#/components/responses/BadRequest'
+        '401':
+          $ref: './common.yaml#/components/responses/Unauthorized'
+        '502':
+          description: "도시 상세·시간대 조회 실패 (CITY_INFO_FAILED)"
+          content:
+            application/json:
+              schema:
+                $ref: './common.yaml#/components/schemas/ErrorResponse'
+              examples:
+                CITY_INFO_FAILED:
+                  value:
+                    success: false
+                    data:
+                      code: "CITY_INFO_FAILED"
+                      fieldErrors: []
+                    message: "도시 정보를 불러오지 못했어요. 다시 시도해 주세요."
+
+  /api/trips:
+    post:
+      tags: [trip]
+      operationId: createTrip
+      summary: "TRP-01-03 여행 생성 저장"
+      description: |
+        검증을 통과한 입력으로 여행을 만든다. D 파트 공개 여행 복제(PUB-07)도 서버 안에서 같은 TripService를 쓴다.
+        처리 순서 (한 트랜잭션):
+        1) 로그인·계정 상태 확인(A의 AccountStatusChecker)
+        2) 같은 requestKey를 이미 처리했으면 새로 만들지 않고 그때 만든 tripId를 돌려준다(DuplicateRequestChecker)
+        3) 입력값 검사 (TRP-01-01과 같은 규칙, 아래 TripCreateRequest)
+        4) 활성 여행 개수 확인 -> 3개 이상이면 TRIP_LIMIT_EXCEEDED(409). 개수 확인과 생성을 한 번에 처리해 동시 요청에도 4번째가 생기지 않게 한다
+        5) TRIP 1행 저장 (STATUS = ACTIVE, TRAVEL_MODE = TRANSIT_WALK, CREATED_BY = 나)
+        6) 나를 OWNER로 등록 (A의 ParticipantService)
+        7) 시작일~종료일 날짜마다 TRIP_DAY 저장 (DAY_NO 1~N)
+        성공하면 화면은 일정 화면(SCH-01)으로 이동하고 "여행 만들기 완료" 안내를 띄운다(문구는 화면이 정함).
+        권한: 로그인 회원(이용 제한 회원 포함).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TripCreateRequest'
+            examples:
+              OK:
+                value:
+                  requestKey: "3f8c2a9e-1b47-4c6d-9a0e-5d2f7b8c1e34"
+                  title: "도쿄 3박 4일 가족여행"
+                  cityId: 1
+                  startDate: "2026-12-20"
+                  endDate: "2026-12-23"
+                  peopleCount: 4
+      responses:
+        '200':
+          description: "만든 여행 (같은 requestKey 재요청이면 처음 만든 여행)"
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: './common.yaml#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/TripCreateResponse'
+              examples:
+                OK:
+                  value:
+                    success: true
+                    data:
+                      tripId: 12
+                    message: null
+        '400':
+          description: |
+            입력값 오류 (INVALID_INPUT). fieldErrors의 문구는 기능정의서 TRP-01-01 '예외·오류 안내 문구'.
+            화면은 field 이름에 맞는 입력 칸 아래에 message를 표시한다.
+          content:
+            application/json:
+              schema:
+                $ref: './common.yaml#/components/schemas/ErrorResponse'
+              examples:
+                INVALID_INPUT:
+                  value:
+                    success: false
+                    data:
+                      code: "INVALID_INPUT"
+                      fieldErrors:
+                        - field: "title"
+                          message: "여행 제목을 입력해 주세요."
+                        - field: "endDate"
+                          message: "여행 기간은 최대 7일까지 만들 수 있어요."
+                    message: "입력값을 확인해 주세요."
+        '401':
+          $ref: './common.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common.yaml#/components/responses/Forbidden'
+        '409':
+          description: "활성 여행 3개 초과(TRIP_LIMIT_EXCEEDED) 또는 다른 요청과 requestKey가 겹침(DUPLICATE_REQUEST)"
+          content:
+            application/json:
+              schema:
+                $ref: './common.yaml#/components/schemas/ErrorResponse'
+              examples:
+                TRIP_LIMIT_EXCEEDED:
+                  value:
+                    success: false
+                    data:
+                      code: "TRIP_LIMIT_EXCEEDED"
+                      fieldErrors: []
+                    message: "참여 중인 여행을 포함해 여행은 최대 3개까지 가질 수 있어요. 기존 여행을 삭제하거나 나가면 더 만들 수 있어요."
+                DUPLICATE_REQUEST:
+                  value:
+                    success: false
+                    data:
+                      code: "DUPLICATE_REQUEST"
+                      fieldErrors: []
+                    message: "이미 처리된 요청이에요."
+        '500':
+          description: "저장 실패 (TRIP_CREATE_FAILED). 화면은 입력값을 유지하고 위쪽에 안내한다."
+          content:
+            application/json:
+              schema:
+                $ref: './common.yaml#/components/schemas/ErrorResponse'
+              examples:
+                TRIP_CREATE_FAILED:
+                  value:
+                    success: false
+                    data:
+                      code: "TRIP_CREATE_FAILED"
+                      fieldErrors: []
+                    message: "여행을 만들지 못했어요. 잠시 후 다시 시도해 주세요."
+
+components:
+  schemas:
+    TripCreationCheckResponse:
+      type: object
+      description: "TRP-01-01 생성 가능 확인 결과"
+      required: [activeTripCount, maxTripCount]
+      properties:
+        activeTripCount:
+          type: integer
+          minimum: 0
+          description: "내가 참여 중인 활성 여행 수 (휴지통·참여 끝난 여행 제외)"
+        maxTripCount:
+          type: integer
+          const: 3
+          description: "최대 개수 (구독 기능 전까지 3)"
+
+    CitySearchResponse:
+      type: object
+      description: "TRP-01-02 도시 검색 결과 한 줄. 화면 표시 \"도쿄 · 일본\""
+      required: [googlePlaceId, cityName, countryName]
+      properties:
+        googlePlaceId:
+          type: string
+          maxLength: 300
+          description: "구글 장소 ID. 도시를 고를 때 POST /api/cities로 보낸다"
+        cityName:
+          type: string
+          description: "도시 이름 (한국어)"
+        countryName:
+          type: string
+          description: "국가 이름 (한국어)"
+
+    CitySelectRequest:
+      type: object
+      description: "TRP-01-02 도시 선택 입력. 검색 결과에서 고른 도시만 보낼 수 있다(직접 타이핑한 글자는 보내지 않음)"
+      required: [googlePlaceId]
+      properties:
+        googlePlaceId:
+          type: string
+          minLength: 1
+          maxLength: 300
+          description: "검색 결과의 googlePlaceId"
+
+    CityResponse:
+      type: object
+      description: "도시 정보 (CITY). 선택 후 칸 아래 \"현지 시간 UTC+9 · 지도: 구글\" 표시에 쓴다"
+      required: [cityId, nameKo, nameEn, countryCode, timezone, utcOffset, mapProvider, centerLat, centerLng]
+      properties:
+        cityId:
+          $ref: './common.yaml#/components/schemas/Id'
+        nameKo:
+          type: string
+          maxLength: 100
+          description: "도시명 한글 (NAME_KO)"
+        nameEn:
+          type: string
+          maxLength: 100
+          description: "도시명 영문 (NAME_EN)"
+        countryCode:
+          type: string
+          minLength: 2
+          maxLength: 2
+          description: "국가 코드 2자리 (COUNTRY_CODE, 예: KR, JP)"
+        timezone:
+          type: string
+          maxLength: 50
+          description: "IANA 시간대 이름 (TIMEZONE, 예: Asia/Tokyo)"
+        utcOffset:
+          type: string
+          pattern: '^[+-]\d{2}:\d{2}$'
+          description: "지금 시각 기준 UTC와의 차이 (timezone으로 서버가 계산, DB에 저장하지 않음). 서머타임이 있는 도시는 날짜에 따라 바뀐다"
+        mapProvider:
+          type: string
+          enum: [KAKAO, GOOGLE]
+          description: "지도 제공자 (MAP_PROVIDER). 대한민국 = KAKAO, 그 밖 = GOOGLE"
+        centerLat:
+          type: number
+          description: "중심 위도 (CENTER_LAT)"
+        centerLng:
+          type: number
+          description: "중심 경도 (CENTER_LNG)"
+
+    TripCreateRequest:
+      type: object
+      description: |
+        TRP-01-03 여행 생성 입력. 화면 검사(TRP-01-01)와 같은 규칙을 서버도 다시 검사한다.
+        | 칸 | 규칙 | 어기면 fieldErrors 문구 |
+        |---|---|---|
+        | title | 앞뒤 공백 제거 후 1~50자, 공백만 불가. 제어문자는 공백 1칸으로 바꿔 저장 | "여행 제목을 입력해 주세요." (비었을 때) |
+        | cityId | 필수, CITY에 있는 도시 | (문구 미정 - 기능정의서에 없음) |
+        | startDate | 실제 날짜, 여행지 현지 오늘 ~ 1년 후(다음 해 같은 날짜) | "시작일은 오늘부터 1년 후까지 고를 수 있어요." |
+        | endDate | 종료일 >= 시작일 | "종료일은 시작일과 같거나 이후여야 해요." |
+        | endDate | 일수(종료일 - 시작일 + 1) 1~7일 | "여행 기간은 최대 7일까지 만들 수 있어요." |
+        | peopleCount | 정수 1~20 | "여행 인원은 1~20 사이의 정수로 입력해 주세요." |
+        공개 여부는 받지 않는다(공개는 PUB-01 [공유하기]로만).
+      required: [requestKey, title, cityId, startDate, endDate, peopleCount]
+      properties:
+        requestKey:
+          $ref: './common.yaml#/components/schemas/RequestKey'
+        title:
+          type: string
+          minLength: 1
+          maxLength: 50
+          description: "여행 제목 (TITLE)"
+        cityId:
+          $ref: './common.yaml#/components/schemas/Id'
+        startDate:
+          $ref: './common.yaml#/components/schemas/LocalDate'
+        endDate:
+          $ref: './common.yaml#/components/schemas/LocalDate'
+        peopleCount:
+          type: integer
+          minimum: 1
+          maximum: 20
+          description: "여행 인원 (PEOPLE_COUNT). 참여자 수와 상관없이 입력값 그대로 저장"
+
+    TripCreateResponse:
+      type: object
+      description: "TRP-01-03 만든 여행. 화면은 이 tripId로 일정 화면(SCH-01)으로 이동한다"
+      required: [tripId]
+      properties:
+        tripId:
+          $ref: './common.yaml#/components/schemas/Id'
+
+  responses:
+    TripLimitExceeded:
+      description: "활성 여행 3개 초과 (TRIP_LIMIT_EXCEEDED). 화면은 안내 창 [확인] [구독 알아보기(준비 중)]을 띄운다"
+      content:
+        application/json:
+          schema:
+            $ref: './common.yaml#/components/schemas/ErrorResponse'
+          examples:
+            TRIP_LIMIT_EXCEEDED:
+              value:
+                success: false
+                data:
+                  code: "TRIP_LIMIT_EXCEEDED"
+                  fieldErrors: []
+                message: "참여 중인 여행을 포함해 여행은 최대 3개까지 가질 수 있어요. 기존 여행을 삭제하거나 나가면 더 만들 수 있어요."
