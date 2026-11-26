@@ -23,8 +23,13 @@ info:
     - **ID**: 정수(int64).
     - **로그인**: Spring Security 서버 세션 + Spring Session JDBC (JWT 쓰지 않음).
       화면은 쿠키를 포함해서 호출한다(`credentials: 'include'`).
-    - **401·403 본문**: ApiResponse 형식으로 나오는 것은 pjh/security(ACC-07) 이후 적용.
-      지금 브랜치에서는 Boot 기본 보안이 본문 없이 401을 준다.
+    - **주소 규칙** (ACC-07): 모든 API 주소는 `/api`로 시작한다.
+      - `/api/auth/**`: 로그인 없이 사용
+      - `/api/admin/**`: 관리자만
+      - 나머지 `/api/**`: 로그인 필요
+      - 로그인 없이 열어야 하는 API는 A 파트에 요청한다(SecurityConfig).
+    - **CSRF** (ACC-07): POST·PUT·PATCH·DELETE는 `XSRF-TOKEN` 쿠키 값을 `X-XSRF-TOKEN` 헤더로 보낸다.
+      화면은 shared/api/client.ts가 자동으로 붙인다. 없거나 맞지 않으면 403 CSRF_TOKEN_INVALID.
 
 servers:
   - url: http://localhost:8080
@@ -117,11 +122,13 @@ components:
         | METHOD_NOT_ALLOWED | 405 | 요청을 처리하지 못했어요. 잠시 후 다시 시도해 주세요. | 공통 |
         | DUPLICATE_REQUEST | 409 | 이미 처리된 요청이에요. | 공통 |
         | INTERNAL_SERVER_ERROR | 500 | 요청을 처리하지 못했어요. 잠시 후 다시 시도해 주세요. | 공통 |
+        | EDIT_PERMISSION_DENIED | 403 | 편집 권한이 없어요. | 공통 (SCH·RTE·SUP·TRP 여러 기능의 '권한 없음' 공통 문구, 조회 참여자가 편집하려 할 때) |
+        | CSRF_TOKEN_INVALID | 403 | 요청을 처리하지 못했어요. 잠시 후 다시 시도해 주세요. | 공통 (CSRF 토큰이 없거나 맞지 않음, 사용자 확정 11/26) |
         | LOGIN_REQUIRED | 401 | 로그인이 필요해요. | ACC-07-01 |
         | COMMUNITY_RESTRICTED | 403 | 이용 제한 중에는 커뮤니티 활동을 할 수 없어요. | ACC-07-01 |
         | ACCOUNT_UNAVAILABLE | 403 | 이용할 수 없는 계정이에요. | ACC-07-01 |
         | RESOURCE_NOT_ACCESSIBLE | 404 | 이미 삭제되었거나 볼 수 없는 내용이에요. | ACC-07-02 |
-        | EDIT_PERMISSION_CHANGED | 403 | 편집 권한이 변경됐어요. 최신 상태를 확인해 주세요. | ACC-07-02 |
+        | EDIT_PERMISSION_CHANGED | 403 | 편집 권한이 변경됐어요. 최신 상태를 확인해 주세요. | ACC-07-02 (화면을 연 채 역할이 바뀐 경우(B 실시간 전파용)) |
         | ADMIN_ONLY | 403 | 관리자만 사용할 수 있어요. | ACC-07-03 |
         | ADMIN_REAUTH_REQUIRED | 403 | 보안을 위해 본인 확인을 다시 진행해 주세요. | ACC-07-03 |
 
@@ -237,7 +244,7 @@ components:
                 message: "입력값을 확인해 주세요."
 
     Unauthorized:
-      description: "로그인 필요 (ACC-07-01 LOGIN_REQUIRED). pjh/security 이후 적용 — 그 전에는 Boot 기본 보안이 본문 없이 401을 준다."
+      description: "로그인 필요 (ACC-07-01 LOGIN_REQUIRED)."
       content:
         application/json:
           schema:
@@ -252,7 +259,7 @@ components:
                 message: "로그인이 필요해요."
 
     Forbidden:
-      description: "권한 없음 (ACC-07-01·02·03). pjh/security 이후 적용."
+      description: "권한 없음 (ACC-07-01·02·03)."
       content:
         application/json:
           schema:
@@ -293,6 +300,20 @@ components:
                   code: "ADMIN_REAUTH_REQUIRED"
                   fieldErrors: []
                 message: "보안을 위해 본인 확인을 다시 진행해 주세요."
+            EDIT_PERMISSION_DENIED:
+              value:
+                success: false
+                data:
+                  code: "EDIT_PERMISSION_DENIED"
+                  fieldErrors: []
+                message: "편집 권한이 없어요."
+            CSRF_TOKEN_INVALID:
+              value:
+                success: false
+                data:
+                  code: "CSRF_TOKEN_INVALID"
+                  fieldErrors: []
+                message: "요청을 처리하지 못했어요. 잠시 후 다시 시도해 주세요."
 
     NotFound:
       description: "없거나 볼 수 없는 자료(ACC-07-02 RESOURCE_NOT_ACCESSIBLE), 없는 주소(공통 API_NOT_FOUND)."
@@ -360,3 +381,10 @@ components:
                   code: "INTERNAL_SERVER_ERROR"
                   fieldErrors: []
                 message: "요청을 처리하지 못했어요. 잠시 후 다시 시도해 주세요."
+
+  securitySchemes:
+    sessionCookie:
+      type: apiKey
+      in: cookie
+      name: SESSION
+      description: "Spring Session 서버 세션 쿠키(HttpOnly, SameSite=Lax, Secure는 COOKIE_SECURE). 로그인(ACC-02, pjh/login) 후 발급. 일반 회원 무활동 60분·최대 12시간, 관리자 무활동 15분·최대 8시간."

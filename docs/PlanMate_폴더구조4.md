@@ -27,10 +27,14 @@ PlanMate/
 │   │   │   │   ├── ApiResponse.java                  # 공통 응답 모양 {success, data, message}
 │   │   │   │   └── PageResponse.java                 # 목록(페이지) 응답 모양
 │   │   │   ├── security/                             # [A] 로그인·권한 검사 (ACC-07)
-│   │   │   │   ├── SecurityConfig.java               # 로그인이 필요한 주소·세션 설정
+│   │   │   │   ├── SecurityConfig.java               # 주소 규칙(/api/auth/** 공개·/api/admin/** 관리자·/api/** 로그인)·CORS·CSRF·비밀번호 암호화
 │   │   │   │   ├── AccountStatusChecker.java         # 로그인·계정 상태 판정 (ACC-07-01)
 │   │   │   │   ├── TripAccessChecker.java            # 여행·개인 자료 접근 검사 (ACC-07-02)
-│   │   │   │   └── AdminAccessChecker.java           # 관리자 검사 (ACC-07-03)
+│   │   │   │   ├── AdminAccessChecker.java           # 관리자 검사 (ACC-07-03)
+│   │   │   │   ├── LoginMember.java                  # 세션에 저장되는 로그인 주체 (getName() = MEMBER_ID, ACC-07)
+│   │   │   │   ├── SecurityErrorHandler.java         # 보안 단계 401·403을 공통 실패 응답(JSON)으로 바꿈
+│   │   │   │   ├── SessionPolicyFilter.java          # 세션 시간 정책 (일반 최대 12시간, 관리자 무활동 15분·최대 8시간)
+│   │   │   │   └── TripStatusReader.java             # 여행 상태(ACTIVE·TRASHED) 조회 인터페이스 — B 파트가 구현
 │   │   │   ├── duplicate/                            # 같은 요청 두 번 처리 방지 (여행 생성·일정 저장·게시·복제)
 │   │   │   │   ├── DuplicateRequestChecker.java      # 같은 요청인지 확인
 │   │   │   │   ├── RequestLogRepository.java         # REQUEST_LOG (요청 기록) 넣기·꺼내기
@@ -697,4 +701,5 @@ PlanMate/
 - contracts/는 OpenAPI 3.1.0 YAML. 공통 응답·실패 응답·RequestKey·Page/Size는 contracts/common.yaml을 $ref로 가져다 씀
 - 패키지 이름 com.planmate, 폴더 이름(auth, collab, cs 등)은 팀에서 바꿔도 됨
 - 새 폴더에는 .gitkeep을 넣고, 실제 파일이 생기면 지움
-- 팀 확인 대기: API 주소 앞 /api 접두사, C-12 추천안 비교(새 페이지) page 파일, E-09·E-11 상세 경로, 여행 탭 주소 방식(지금은 경비만 /trips/:tripId/budget)
+- API 주소는 /api로 시작 (11/26 확정). 로그인 없이 열어야 하는 API는 A에게 요청해 SecurityConfig에 추가
+- 팀 확인 대기: C-12 추천안 비교(새 페이지) page 파일, E-09·E-11 상세 경로, 여행 탭 주소 방식(지금은 경비만 /trips/:tripId/budget)
