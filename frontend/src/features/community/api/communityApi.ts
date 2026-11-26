@@ -1,10 +1,19 @@
-// 커뮤니티 서버 호출 (PUB-03 공개 목록·검색·정렬, PUB-04 공개 상세). 약속: contracts/community.yaml
+// 커뮤니티 서버 호출 (PUB-03 공개 목록·검색·정렬, PUB-04 공개 상세, PUB-05 좋아요, PUB-06 북마크). 약속: contracts/community.yaml
 // 지금은 가짜 데이터(mockData.ts)를 돌려준다. 화면 파일은 이 파일의 함수만 부른다.
 // TODO(D): 서버 API가 생기고 A가 로그인 없이 열어 주면
 //          1) 각 함수 안쪽을 shared/api/client.ts 호출로 바꾸고
 //          2) mockData.ts를 지운다. (화면 파일은 고치지 않아도 됨)
-import type { PageResponse } from '../../../shared/api/client'
-import { mockGetCityOptions, mockGetPublicPostDetail, mockGetPublicPosts } from '../mockData.ts'
+import { ApiError, type PageResponse } from '../../../shared/api/client'
+import {
+  mockBookmarkPost,
+  mockGetCityOptions,
+  mockGetMyBookmarks,
+  mockGetPublicPostDetail,
+  mockGetPublicPosts,
+  mockLikePost,
+  mockUnbookmarkPost,
+  mockUnlikePost,
+} from '../mockData.ts'
 
 // 정렬: 최신순 / 좋아요순 (PUB-03-03)
 export type PostSort = 'LATEST' | 'LIKES'
@@ -123,4 +132,58 @@ export const POST_NOT_VISIBLE = 'PUBLIC_POST_NOT_VISIBLE'
  */
 export function getPublicPostDetail(postId: number): Promise<PostDetail> {
   return mockGetPublicPostDetail(postId)
+}
+
+// ---- PUB-05 좋아요·취소 (로그인 필요) ----
+
+export interface LikeResult {
+  liked: boolean
+  likeCount: number
+}
+
+/** PUB-05-01 좋아요: PUT /api/community/posts/{postId}/like (이미 눌렀으면 그대로 성공) */
+export function likePost(postId: number): Promise<LikeResult> {
+  return mockLikePost(postId)
+}
+
+/** PUB-05-02 좋아요 취소: DELETE /api/community/posts/{postId}/like (없으면 그대로 성공) */
+export function unlikePost(postId: number): Promise<LikeResult> {
+  return mockUnlikePost(postId)
+}
+
+// ---- PUB-06 북마크 (로그인 필요) ----
+
+export interface BookmarkResult {
+  bookmarked: boolean
+}
+
+/** PUB-06-01 북마크 저장: PUT /api/community/posts/{postId}/bookmark (회원당 200개) */
+export function bookmarkPost(postId: number): Promise<BookmarkResult> {
+  return mockBookmarkPost(postId)
+}
+
+/** PUB-06-01 북마크 해제: DELETE /api/community/posts/{postId}/bookmark */
+export function unbookmarkPost(postId: number): Promise<BookmarkResult> {
+  return mockUnbookmarkPost(postId)
+}
+
+// PUB-06-02 내 북마크 카드 한 개. 볼 수 없게 된 게시물은 visible = false, post = null
+export interface MyBookmarkItem {
+  bookmarkId: number // 이어 받기 기준
+  postId: number // 해제할 때 씀
+  visible: boolean
+  post: PostListItem | null
+  bookmarkedAt: string
+}
+
+export const BOOKMARK_PAGE_SIZE = 20 // PUB-06-02 20개씩
+
+/** PUB-06-02 내 북마크 목록: GET /api/community/bookmarks (담은 시각 최신순) */
+export function getMyBookmarks(after?: number, page = 0): Promise<PageResponse<MyBookmarkItem>> {
+  return mockGetMyBookmarks(after, page)
+}
+
+/** 실패 안내 문구: 서버가 보낸 규칙 위반 문구(볼 수 없는 게시물·이용 제한·200개 초과 등)가 있으면 그 문구, 없으면 기능의 실패 문구 */
+export function failMessage(e: unknown, fallback: string): string {
+  return e instanceof ApiError && e.code !== null && e.message ? e.message : fallback
 }

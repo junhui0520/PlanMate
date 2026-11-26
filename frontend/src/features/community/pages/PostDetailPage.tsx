@@ -10,14 +10,20 @@ import { ApiError } from '../../../shared/api/client'
 import { Button } from '../../../shared/components/Button'
 import { EmptyState } from '../../../shared/components/EmptyState'
 import { Loading } from '../../../shared/components/Loading'
+import { useToast } from '../../../shared/hooks/useToast'
 import { formatRecordedAt, formatTime } from '../../../shared/utils/date'
 import {
+  bookmarkPost,
+  failMessage,
   getPublicPostDetail,
+  likePost,
   POST_NOT_VISIBLE,
   type PostDetail,
   type PublicPlace,
   type PublicSegment,
   type SegmentMode,
+  unbookmarkPost,
+  unlikePost,
 } from '../api/communityApi.ts'
 import BookmarkButton from '../components/BookmarkButton.tsx'
 import LikeButton from '../components/LikeButton.tsx'
@@ -94,16 +100,56 @@ function PostBody({ post }: { post: PostDetail }) {
     }
     action()
   }
-  // TODO(D): 각 동작은 그 기능 단계에서 붙인다 (PUB-05 좋아요, PUB-06 북마크, PUB-07 복제, PUB-09 신고, PUB-02-05 수정, PUB-02-02 비공개)
+  // TODO(D): 나머지 동작은 그 기능 단계에서 붙인다 (PUB-07 복제, PUB-09 신고, PUB-02-05 수정, PUB-02-02 비공개)
   const notYet = () => {}
   const locked = viewer.loggedIn && !viewer.communityWritable // 이용 제한 회원: 버튼 모두 비활성
+  const toast = useToast()
+
+  // PUB-05 좋아요: 누르면 바로 채우고 ±1, 처리 중 잠금, 실패하면 되돌리고 안내
+  const [like, setLike] = useState({ liked: viewer.liked, count: post.likeCount })
+  const [likeBusy, setLikeBusy] = useState(false)
+  const toggleLike = async () => {
+    const before = like
+    const adding = !before.liked
+    setLike({ liked: adding, count: Math.max(0, before.count + (adding ? 1 : -1)) })
+    setLikeBusy(true)
+    try {
+      const res = await (adding ? likePost(post.postId) : unlikePost(post.postId))
+      setLike({ liked: res.liked, count: res.likeCount }) // 서버 값으로 맞춤
+    } catch (e) {
+      setLike(before) // 원래대로
+      toast.show({
+        message: failMessage(e, adding ? '좋아요를 누르지 못했어요.' : '좋아요를 취소하지 못했어요.'),
+        type: 'error',
+      })
+    } finally {
+      setLikeBusy(false)
+    }
+  }
+
+  // PUB-06-01 북마크: 처리 중 잠금, 성공하면 채우고 "북마크 완료" / "북마크에서 뺐어요"(3초 뒤 자동으로 사라짐)
+  const [bookmarked, setBookmarked] = useState(viewer.bookmarked)
+  const [bookmarkBusy, setBookmarkBusy] = useState(false)
+  const toggleBookmark = async () => {
+    const adding = !bookmarked
+    setBookmarkBusy(true)
+    try {
+      const res = await (adding ? bookmarkPost(post.postId) : unbookmarkPost(post.postId))
+      setBookmarked(res.bookmarked)
+      toast.show({ message: res.bookmarked ? '북마크 완료' : '북마크에서 뺐어요' })
+    } catch (e) {
+      toast.show({ message: failMessage(e, '북마크에 담지 못했어요.'), type: 'error' })
+    } finally {
+      setBookmarkBusy(false)
+    }
+  }
 
   // "지은 · 도쿄 · 4일 · 좋아요 12 · 게시 10.20 · 수정 10.28" (고친 적 없으면 게시 시각만)
   const meta = [
     post.authorNickname,
     post.cityName,
     `${post.days}일`,
-    `좋아요 ${post.likeCount}`,
+    `좋아요 ${like.count}`,
     `게시 ${formatRecordedAt(post.publishedAt)}`,
     post.updatedAt ? `수정 ${formatRecordedAt(post.updatedAt)}` : null,
   ]
@@ -119,7 +165,13 @@ function PostBody({ post }: { post: PostDetail }) {
         </div>
         {/* PUB-04-03 버튼: 내 게시물이면 [좋아요]·[제목·소개 수정]·[비공개 전환]만 */}
         <div className="post-detail__actions">
-          <LikeButton count={post.likeCount} liked={viewer.liked} disabled={locked} onClick={requireLogin(notYet)} />
+          <LikeButton
+            count={like.count}
+            liked={like.liked}
+            disabled={locked}
+            busy={likeBusy}
+            onClick={requireLogin(toggleLike)}
+          />
           {viewer.mine ? (
             <>
               <Button variant="secondary" disabled={locked} onClick={notYet}>
@@ -131,7 +183,12 @@ function PostBody({ post }: { post: PostDetail }) {
             </>
           ) : (
             <>
-              <BookmarkButton bookmarked={viewer.bookmarked} disabled={locked} onClick={requireLogin(notYet)} />
+              <BookmarkButton
+                bookmarked={bookmarked}
+                disabled={locked}
+                busy={bookmarkBusy}
+                onClick={requireLogin(toggleBookmark)}
+              />
               <Button disabled={locked} onClick={requireLogin(notYet)}>
                 내 여행으로 복제
               </Button>

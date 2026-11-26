@@ -11,11 +11,22 @@
 //   ?mock=loading | error | hidden  (hidden = 볼 수 없는 게시물)
 //   ?viewer=guest | member | liked | mine | restricted   (보는 사람, 기본 guest = 비회원)
 //   목록에 없는 번호(예: /community/1)도 볼 수 없는 게시물
+//   ?mock=like-error      (좋아요·취소 실패 → 화면이 되돌림)
+//   ?mock=bookmark-error  (북마크 저장·해제 실패)
+//   ?mock=bookmark-limit  (북마크 200개 초과)
+//   ?mock=gone            (그사이 볼 수 없게 된 게시물에 좋아요·북마크)
+//
+// 내 북마크(/mypage/bookmarks): ?mock=loading | empty | error | more-error
+// 좋아요·북마크를 누른 결과는 이 파일에만 남는다. 새로고침하면 처음으로 돌아간다.
 import { ApiError, type PageResponse } from '../../shared/api/client'
 import {
   POST_NOT_VISIBLE,
   POST_PAGE_SIZE,
   type CityOption,
+  BOOKMARK_PAGE_SIZE,
+  type BookmarkResult,
+  type LikeResult,
+  type MyBookmarkItem,
   type PostDetail,
   type PostListItem,
   type PostListQuery,
@@ -174,6 +185,11 @@ const VIEWERS: Record<string, PostViewer> = {
   restricted: { loggedIn: true, mine: false, liked: false, bookmarked: false, communityWritable: false },
 }
 
+function currentViewer(): PostViewer {
+  const viewerKey = new URLSearchParams(window.location.search).get('viewer') ?? 'guest'
+  return { ...(VIEWERS[viewerKey] ?? VIEWERS.guest) }
+}
+
 function notVisible(): ApiError {
   return new ApiError(404, POST_NOT_VISIBLE, [], '볼 수 없는 게시물이에요.')
 }
@@ -186,8 +202,9 @@ export async function mockGetPublicPostDetail(postId: number): Promise<PostDetai
   const post = mockPosts.find((p) => p.postId === postId)
   if (!post || mode === 'hidden') throw notVisible()
 
-  const viewerKey = new URLSearchParams(window.location.search).get('viewer') ?? 'guest'
-  const viewer = VIEWERS[viewerKey] ?? VIEWERS.guest
+  const viewer = currentViewer()
+  viewer.liked = viewer.loggedIn && myLikes.has(postId)
+  viewer.bookmarked = viewer.loggedIn && myBookmarks.some((b) => b.postId === postId)
   const isD02 = post.postId === 100
   return {
     postId: post.postId,
@@ -198,11 +215,104 @@ export async function mockGetPublicPostDetail(postId: number): Promise<PostDetai
     mapProvider: post.cityName === '부산' || post.cityName === '제주' ? 'KAKAO' : 'GOOGLE',
     days: post.days,
     authorNickname: post.authorNickname,
-    likeCount: post.likeCount + (viewer.liked ? 1 : 0),
+    likeCount: post.likeCount,
     publishedAt: post.publishedAt,
     updatedAt: post.updatedAt,
     viewer,
     // D-02 예시가 아니면 일수만큼 빈 날 (일정 확인은 /community/100에서)
     schedule: isD02 ? D02_SCHEDULE : Array.from({ length: post.days }, (_, i) => ({ dayNo: i + 1, places: [] })),
+  }
+}
+
+// ---- PUB-05 좋아요·PUB-06 북마크 (가짜 저장) ----
+
+// ?viewer=liked 이면 처음부터 100번(D-02 도쿄)에 좋아요·북마크 한 상태
+const myLikes = new Set<number>(currentViewer().liked ? [100] : [])
+
+// 내 북마크: D-09 예시(오사카·교토·볼 수 없는 게시물) + 이어 받기 확인용 22개
+interface MockBookmark {
+  bookmarkId: number
+  postId: number
+  bookmarkedAt: string
+}
+const HIDDEN_POST_ID = 1 // 목록에 없는 번호 = 볼 수 없게 된 게시물
+let nextBookmarkId = 1000
+const myBookmarks: MockBookmark[] = [
+  ...(currentViewer().bookmarked ? [{ bookmarkId: 999, postId: 100, bookmarkedAt: '2026-11-26T09:00:00' }] : []),
+  { bookmarkId: 998, postId: 99, bookmarkedAt: '2026-11-25T20:00:00' }, // 오사카 먹방 당일치기
+  { bookmarkId: 997, postId: 97, bookmarkedAt: '2026-11-25T19:00:00' }, // 교토 단풍 1박 2일
+  { bookmarkId: 996, postId: HIDDEN_POST_ID, bookmarkedAt: '2026-11-25T18:00:00' }, // 볼 수 없는 게시물
+  ...Array.from({ length: 22 }, (_, i) => ({
+    bookmarkId: 995 - i,
+    postId: 94 - (i % 18),
+    bookmarkedAt: `2026-11-${String(24 - Math.floor(i / 2)).padStart(2, '0')}T${i % 2 === 0 ? '12' : '08'}:00:00`,
+  })),
+]
+
+function failIf(mode: string) {
+  if (mockMode() === mode) throw new Error('mock error')
+  if (mockMode() === 'gone') throw notVisible()
+}
+
+export async function mockLikePost(postId: number): Promise<LikeResult> {
+  await wait(400)
+  failIf('like-error')
+  const post = mockPosts.find((p) => p.postId === postId)
+  if (!post) throw notVisible()
+  if (!myLikes.has(postId)) {
+    myLikes.add(postId)
+    post.likeCount += 1
+  }
+  return { liked: true, likeCount: post.likeCount }
+}
+
+export async function mockUnlikePost(postId: number): Promise<LikeResult> {
+  await wait(400)
+  failIf('like-error')
+  const post = mockPosts.find((p) => p.postId === postId)
+  if (!post) throw notVisible()
+  if (myLikes.delete(postId)) post.likeCount = Math.max(0, post.likeCount - 1)
+  return { liked: false, likeCount: post.likeCount }
+}
+
+export async function mockBookmarkPost(postId: number): Promise<BookmarkResult> {
+  await wait(400)
+  failIf('bookmark-error')
+  if (!mockPosts.some((p) => p.postId === postId)) throw notVisible()
+  if (myBookmarks.some((b) => b.postId === postId)) return { bookmarked: true }
+  if (mockMode() === 'bookmark-limit' || myBookmarks.length >= 200) {
+    throw new ApiError(409, 'BOOKMARK_LIMIT_EXCEEDED', [], '북마크는 최대 200개까지 담을 수 있어요.')
+  }
+  myBookmarks.unshift({ bookmarkId: nextBookmarkId++, postId, bookmarkedAt: '2026-11-26T15:00:00' })
+  return { bookmarked: true }
+}
+
+export async function mockUnbookmarkPost(postId: number): Promise<BookmarkResult> {
+  await wait(400)
+  if (mockMode() === 'bookmark-error') throw new Error('mock error')
+  const index = myBookmarks.findIndex((b) => b.postId === postId)
+  if (index >= 0) myBookmarks.splice(index, 1)
+  return { bookmarked: false }
+}
+
+// PUB-06-02 내 북마크 (서버 흉내: 담은 시각 최신순, 마지막 북마크 다음부터, 볼 수 없으면 내용 비움)
+export async function mockGetMyBookmarks(after: number | undefined, page: number): Promise<PageResponse<MyBookmarkItem>> {
+  const mode = mockMode()
+  await wait(mode === 'loading' ? 600_000 : 500)
+  if (mode === 'error' || (mode === 'more-error' && after !== undefined)) throw new Error('mock error')
+  const all = mode === 'empty' ? [] : myBookmarks
+  const start = after === undefined ? 0 : all.findIndex((b) => b.bookmarkId === after) + 1
+  const content = all.slice(start, start + BOOKMARK_PAGE_SIZE).map((b) => {
+    const found = mockPosts.find((p) => p.postId === b.postId)
+    const post = found ? (({ cityId: _cityId, ...item }) => item)(found) : null
+    return { bookmarkId: b.bookmarkId, postId: b.postId, visible: post !== null, post, bookmarkedAt: b.bookmarkedAt }
+  })
+  return {
+    content,
+    page,
+    size: BOOKMARK_PAGE_SIZE,
+    totalElements: all.length,
+    totalPages: Math.ceil(all.length / BOOKMARK_PAGE_SIZE),
+    hasNext: start + BOOKMARK_PAGE_SIZE < all.length,
   }
 }
