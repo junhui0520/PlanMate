@@ -1,4 +1,4 @@
-// 커뮤니티 서버 호출 (PUB-03 공개 목록·검색·정렬, PUB-04 공개 상세, PUB-05 좋아요, PUB-06 북마크). 약속: contracts/community.yaml
+// 커뮤니티 서버 호출 (PUB-01 공유·게시, PUB-02 비공개·수정, PUB-03 목록, PUB-04 상세, PUB-05 좋아요, PUB-06 북마크). 약속: contracts/community.yaml
 // 지금은 가짜 데이터(mockData.ts)를 돌려준다. 화면 파일은 이 파일의 함수만 부른다.
 // TODO(D): 서버 API가 생기고 A가 로그인 없이 열어 주면
 //          1) 각 함수 안쪽을 shared/api/client.ts 호출로 바꾸고
@@ -8,9 +8,14 @@ import {
   mockBookmarkPost,
   mockGetCityOptions,
   mockGetMyBookmarks,
+  mockGetPostPreview,
   mockGetPublicPostDetail,
   mockGetPublicPosts,
+  mockGetShareStatus,
   mockLikePost,
+  mockMakePostPrivate,
+  mockPublishPost,
+  mockUpdatePostInfo,
   mockUnbookmarkPost,
   mockUnlikePost,
 } from '../mockData.ts'
@@ -181,6 +186,62 @@ export const BOOKMARK_PAGE_SIZE = 20 // PUB-06-02 20개씩
 /** PUB-06-02 내 북마크 목록: GET /api/community/bookmarks (담은 시각 최신순) */
 export function getMyBookmarks(after?: number, page = 0): Promise<PageResponse<MyBookmarkItem>> {
   return mockGetMyBookmarks(after, page)
+}
+
+// ---- PUB-01 공유하기·미리보기·게시 (여행 소유자) ----
+
+// 이 여행의 게시 상태: NONE 처음 / PUBLIC 공개 중(공유하기 비활성) / PRIVATE 비공개로 바꿈 / ADMIN_HIDDEN 관리자 비공개
+export type ShareState = 'NONE' | 'PUBLIC' | 'PRIVATE' | 'ADMIN_HIDDEN'
+export interface ShareStatus {
+  status: ShareState
+  postId: number | null
+  title: string | null // PRIVATE이면 예전 공개용 제목 (입력 칸에 넣음)
+  intro: string | null
+}
+
+/** PUB-01-01 공유하기 상태: GET /api/trips/{tripId}/post */
+export function getShareStatus(tripId: number): Promise<ShareStatus> {
+  return mockGetShareStatus(tripId)
+}
+
+// 공개 미리보기 (공개 허용 값만, 제목·소개는 화면이 들고 있음)
+export interface PostPreview {
+  cityName: string | null
+  mapProvider: 'KAKAO' | 'GOOGLE' | null
+  days: number
+  authorNickname: string | null
+  schedule: PublicDay[]
+}
+
+/** PUB-01-02 공개 미리보기: GET /api/trips/{tripId}/post-preview */
+export function getPostPreview(tripId: number): Promise<PostPreview> {
+  return mockGetPostPreview(tripId)
+}
+
+export interface PostInfoRequest {
+  title: string // 1~40자
+  intro: string | null // 0~100자
+}
+
+export interface PublishRequest extends PostInfoRequest {
+  requestKey: string // 같은 요청 두 번 처리 방지 (게시 동작 1번마다 새로, 다시 시도할 때는 같은 값)
+}
+
+/** PUB-01-03 게시: POST /api/trips/{tripId}/post */
+export function publishPost(tripId: number, req: PublishRequest): Promise<{ postId: number }> {
+  return mockPublishPost(tripId, req)
+}
+
+// ---- PUB-02 내 게시물 (여행 소유자) ----
+
+/** PUB-02-05 공개용 제목·소개 수정: PUT /api/community/posts/{postId}/info (고친 뒤의 상세) */
+export function updatePostInfo(postId: number, req: PostInfoRequest): Promise<PostDetail> {
+  return mockUpdatePostInfo(postId, req)
+}
+
+/** PUB-02-02 비공개 전환: PATCH /api/community/posts/{postId}/private */
+export function makePostPrivate(postId: number): Promise<void> {
+  return mockMakePostPrivate(postId)
 }
 
 /** 실패 안내 문구: 서버가 보낸 규칙 위반 문구(볼 수 없는 게시물·이용 제한·200개 초과 등)가 있으면 그 문구, 없으면 기능의 실패 문구 */

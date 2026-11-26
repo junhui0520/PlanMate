@@ -15,6 +15,13 @@
 //   ?mock=bookmark-error  (북마크 저장·해제 실패)
 //   ?mock=bookmark-limit  (북마크 200개 초과)
 //   ?mock=gone            (그사이 볼 수 없게 된 게시물에 좋아요·북마크)
+//   ?mock=edit-error | private-error   (내 게시물 제목·소개 수정 / 비공개 전환 실패, ?viewer=mine 과 함께)
+//
+// 공유하기(/trips/:tripId/share):
+//   ?share=none | private | public | admin   (이 여행의 게시 상태, 기본 none = 처음 공유)
+//   ?mock=not-owner | restricted             (소유자 아님 / 이용 제한 → 창을 열지 않고 안내)
+//   ?mock=preview-error | no-schedule        (미리보기 실패 / 일정 없음)
+//   ?mock=publish-error | already-public     (게시 실패 / 그사이 이미 공개)
 //
 // 내 북마크(/mypage/bookmarks): ?mock=loading | empty | error | more-error
 // 좋아요·북마크를 누른 결과는 이 파일에만 남는다. 새로고침하면 처음으로 돌아간다.
@@ -28,7 +35,11 @@ import {
   type LikeResult,
   type MyBookmarkItem,
   type PostDetail,
+  type PostInfoRequest,
   type PostListItem,
+  type PostPreview,
+  type PublishRequest,
+  type ShareStatus,
   type PostListQuery,
   type PostViewer,
   type PublicDay,
@@ -36,6 +47,13 @@ import {
 
 interface MockPost extends PostListItem {
   cityId: number
+  intro: string | null
+  hidden?: boolean // 비공개로 바꿈(PUB-02-02) → 목록·상세·북마크에서 볼 수 없음
+}
+
+// 공개 게시물로 보이는 것만 (비공개로 바꾼 게시물 제외)
+function visiblePost(postId: number): MockPost | undefined {
+  return mockPosts.find((p) => p.postId === postId && !p.hidden)
 }
 
 const CITIES = [
@@ -67,6 +85,7 @@ function buildPosts(): MockPost[] {
     cityName: CITIES.find((c) => c.cityId === cityId)?.name ?? '',
     days,
     authorNickname: nick,
+    intro: i === 0 ? '아이와 함께 걷기 좋은 코스로 짰어요. 오전엔 관광, 오후엔 공원 위주예요.' : null,
     likeCount: likes,
     publishedAt: published,
     updatedAt: updated,
@@ -82,6 +101,7 @@ function buildPosts(): MockPost[] {
       cityName: city.name,
       days: (i % 7) + 1,
       authorNickname: i === 5 ? null : `여행자${i + 1}`, // 작성자 정보 없음 확인용
+      intro: null,
       likeCount: (i * 7) % 25,
       publishedAt: `2026-11-${day}T${i % 2 === 0 ? '13' : '08'}:00:00`,
       updatedAt: null,
@@ -91,6 +111,21 @@ function buildPosts(): MockPost[] {
 }
 
 const mockPosts = buildPosts()
+
+// 서버 카드 모양(PostListItem)만 남김
+function toListItem(p: MockPost): PostListItem {
+  return {
+    postId: p.postId,
+    title: p.title,
+    imageUrl: p.imageUrl,
+    cityName: p.cityName,
+    days: p.days,
+    authorNickname: p.authorNickname,
+    likeCount: p.likeCount,
+    publishedAt: p.publishedAt,
+    updatedAt: p.updatedAt,
+  }
+}
 
 function mockMode(): string | null {
   return new URLSearchParams(window.location.search).get('mock')
@@ -115,7 +150,7 @@ export async function mockGetPublicPosts(query: PostListQuery): Promise<PageResp
   if (mode === 'error' || (mode === 'more-error' && query.after !== undefined)) throw new Error('mock error')
 
   const keyword = query.q?.trim().toLowerCase() ?? ''
-  const matched = (mode === 'empty' ? [] : mockPosts)
+  const matched = (mode === 'empty' ? [] : mockPosts.filter((p) => !p.hidden))
     .filter((p) => !keyword || p.title.toLowerCase().includes(keyword)) // 일부 일치, 대소문자 구분 안 함
     .filter((p) => query.cityId === undefined || p.cityId === query.cityId)
     .filter((p) => query.days === undefined || p.days === query.days)
@@ -124,7 +159,7 @@ export async function mockGetPublicPosts(query: PostListQuery): Promise<PageResp
   // 마지막 게시물 기준 이어 받기: 그 게시물 다음부터 (그 게시물이 없으면 처음부터)
   const lastIndex = query.after === undefined ? -1 : matched.findIndex((p) => p.postId === query.after)
   const start = lastIndex + 1
-  const content = matched.slice(start, start + POST_PAGE_SIZE).map(({ cityId: _cityId, ...item }) => item)
+  const content = matched.slice(start, start + POST_PAGE_SIZE).map(toListItem)
 
   return {
     content,
@@ -199,17 +234,19 @@ export async function mockGetPublicPostDetail(postId: number): Promise<PostDetai
   const mode = mockMode()
   await wait(mode === 'loading' ? 600_000 : 500)
   if (mode === 'error') throw new Error('mock error')
-  const post = mockPosts.find((p) => p.postId === postId)
+  const post = visiblePost(postId)
   if (!post || mode === 'hidden') throw notVisible()
 
   const viewer = currentViewer()
+  // 방금 게시한 내 게시물은 ?viewer 없이도 내 게시물로 보임
+  if (!new URLSearchParams(window.location.search).has('viewer') && myPostIds.has(postId)) Object.assign(viewer, VIEWERS.mine)
   viewer.liked = viewer.loggedIn && myLikes.has(postId)
   viewer.bookmarked = viewer.loggedIn && myBookmarks.some((b) => b.postId === postId)
-  const isD02 = post.postId === 100
+  const isD02 = post.postId === 100 || myPostIds.has(postId) // 게시한 게시물도 D-02 일정으로 보여 줌
   return {
     postId: post.postId,
     title: post.title,
-    intro: isD02 ? '아이와 함께 걷기 좋은 코스로 짰어요. 오전엔 관광, 오후엔 공원 위주예요.' : null,
+    intro: post.intro,
     imageUrl: post.imageUrl,
     cityName: post.cityName,
     mapProvider: post.cityName === '부산' || post.cityName === '제주' ? 'KAKAO' : 'GOOGLE',
@@ -257,7 +294,7 @@ function failIf(mode: string) {
 export async function mockLikePost(postId: number): Promise<LikeResult> {
   await wait(400)
   failIf('like-error')
-  const post = mockPosts.find((p) => p.postId === postId)
+  const post = visiblePost(postId)
   if (!post) throw notVisible()
   if (!myLikes.has(postId)) {
     myLikes.add(postId)
@@ -278,7 +315,7 @@ export async function mockUnlikePost(postId: number): Promise<LikeResult> {
 export async function mockBookmarkPost(postId: number): Promise<BookmarkResult> {
   await wait(400)
   failIf('bookmark-error')
-  if (!mockPosts.some((p) => p.postId === postId)) throw notVisible()
+  if (!visiblePost(postId)) throw notVisible()
   if (myBookmarks.some((b) => b.postId === postId)) return { bookmarked: true }
   if (mockMode() === 'bookmark-limit' || myBookmarks.length >= 200) {
     throw new ApiError(409, 'BOOKMARK_LIMIT_EXCEEDED', [], '북마크는 최대 200개까지 담을 수 있어요.')
@@ -303,8 +340,8 @@ export async function mockGetMyBookmarks(after: number | undefined, page: number
   const all = mode === 'empty' ? [] : myBookmarks
   const start = after === undefined ? 0 : all.findIndex((b) => b.bookmarkId === after) + 1
   const content = all.slice(start, start + BOOKMARK_PAGE_SIZE).map((b) => {
-    const found = mockPosts.find((p) => p.postId === b.postId)
-    const post = found ? (({ cityId: _cityId, ...item }) => item)(found) : null
+    const found = visiblePost(b.postId)
+    const post = found ? toListItem(found) : null
     return { bookmarkId: b.bookmarkId, postId: b.postId, visible: post !== null, post, bookmarkedAt: b.bookmarkedAt }
   })
   return {
@@ -315,4 +352,95 @@ export async function mockGetMyBookmarks(after: number | undefined, page: number
     totalPages: Math.ceil(all.length / BOOKMARK_PAGE_SIZE),
     hasNext: start + BOOKMARK_PAGE_SIZE < all.length,
   }
+}
+
+// ---- PUB-01 공유하기·미리보기·게시, PUB-02-02 비공개 전환, PUB-02-05 제목·소개 수정 ----
+
+const myPostIds = new Set<number>() // 이 화면에서 게시한 내 게시물
+const sharedPosts = new Map<number, number>() // 여행 ID → 게시물 ID
+let nextPostId = 200
+
+// ?share= 로 이 여행의 처음 게시 상태를 정함 (private·public·admin이면 도쿄 예시 게시물 100번을 이 여행 게시물로 봄)
+function shareOf(tripId: number): { post: MockPost | undefined; adminHidden: boolean } {
+  const param = new URLSearchParams(window.location.search).get('share')
+  if (!sharedPosts.has(tripId) && (param === 'private' || param === 'public' || param === 'admin')) {
+    sharedPosts.set(tripId, 100)
+    const post = mockPosts.find((p) => p.postId === 100)
+    if (post) post.hidden = param !== 'public'
+  }
+  const postId = sharedPosts.get(tripId)
+  return { post: mockPosts.find((p) => p.postId === postId), adminHidden: param === 'admin' }
+}
+
+function rejectIfNotAllowed() {
+  const mode = mockMode()
+  if (mode === 'not-owner') throw new ApiError(403, 'POST_OWNER_ONLY', [], '여행 소유자만 공개할 수 있어요.')
+  if (mode === 'restricted') throw new ApiError(403, 'POST_RESTRICTED', [], '이용 제한 중에는 게시할 수 없어요.')
+}
+
+export async function mockGetShareStatus(tripId: number): Promise<ShareStatus> {
+  await wait(300)
+  if (mockMode() === 'not-owner') rejectIfNotAllowed()
+  const { post, adminHidden } = shareOf(tripId)
+  if (!post) return { status: 'NONE', postId: null, title: null, intro: null }
+  const status = adminHidden ? 'ADMIN_HIDDEN' : post.hidden ? 'PRIVATE' : 'PUBLIC'
+  return { status, postId: post.postId, title: post.title, intro: post.intro }
+}
+
+// 미리보기: 원래 여행(도쿄 3박 4일)의 공개 허용 값만
+export async function mockGetPostPreview(_tripId: number): Promise<PostPreview> {
+  await wait(mockMode() === 'loading' ? 600_000 : 500)
+  rejectIfNotAllowed()
+  if (mockMode() === 'preview-error') throw new Error('mock error')
+  if (mockMode() === 'no-schedule') throw new ApiError(400, 'POST_NO_SCHEDULE', [], '일정을 추가한 뒤 공유할 수 있어요.')
+  return { cityName: '도쿄', mapProvider: 'GOOGLE', days: 4, authorNickname: '지은', schedule: D02_SCHEDULE }
+}
+
+const usedRequestKeys = new Map<string, number>() // 같은 요청 두 번 처리 방지 흉내
+
+export async function mockPublishPost(tripId: number, req: PublishRequest): Promise<{ postId: number }> {
+  await wait(700)
+  const done = usedRequestKeys.get(req.requestKey)
+  if (done !== undefined) return { postId: done }
+  rejectIfNotAllowed()
+  if (mockMode() === 'publish-error') throw new Error('mock error')
+  const { post, adminHidden } = shareOf(tripId)
+  if (adminHidden) throw new ApiError(403, 'POST_ADMIN_HIDDEN', [], '관리자가 비공개로 바꾼 게시물이라 다시 공유할 수 없어요.')
+  if (mockMode() === 'already-public' || (post && !post.hidden)) {
+    throw new ApiError(409, 'POST_ALREADY_PUBLIC', [], '이미 공개한 여행이에요.')
+  }
+  let postId: number
+  if (post) {
+    // 비공개로 바꾼 게시물을 다시 공개 (좋아요·처음 게시 시각 그대로, 수정 시각 기록)
+    Object.assign(post, { hidden: false, title: req.title, intro: req.intro, updatedAt: '2026-11-27T15:00:00' })
+    postId = post.postId
+  } else {
+    postId = nextPostId++
+    mockPosts.unshift({
+      postId, cityId: 1, cityName: '도쿄', days: 4, title: req.title, intro: req.intro, imageUrl: null,
+      authorNickname: '지은', likeCount: 0, publishedAt: '2026-11-27T15:00:00', updatedAt: null,
+    })
+    sharedPosts.set(tripId, postId)
+  }
+  myPostIds.add(postId)
+  usedRequestKeys.set(req.requestKey, postId)
+  return { postId }
+}
+
+export async function mockUpdatePostInfo(postId: number, req: PostInfoRequest): Promise<PostDetail> {
+  await wait(500)
+  if (mockMode() === 'edit-error') throw new Error('mock error')
+  const post = visiblePost(postId)
+  if (!post) throw notVisible()
+  Object.assign(post, { title: req.title, intro: req.intro, updatedAt: '2026-11-27T15:10:00' })
+  myPostIds.add(postId)
+  return mockGetPublicPostDetail(postId)
+}
+
+export async function mockMakePostPrivate(postId: number): Promise<void> {
+  await wait(500)
+  if (mockMode() === 'private-error') throw new Error('mock error')
+  const post = mockPosts.find((p) => p.postId === postId)
+  if (!post) throw notVisible()
+  post.hidden = true
 }

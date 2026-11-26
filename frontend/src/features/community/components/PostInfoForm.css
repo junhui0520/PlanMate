@@ -1,0 +1,35 @@
+/* PUB-01-01·PUB-02-05 공개 정보 입력 칸 (와이어프레임 D-07). 값은 shared/styles/variables.css */
+.post-info-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.post-info-form__intro {
+  height: auto;
+  padding: var(--space-2) var(--space-3);
+  line-height: var(--line-height-base);
+  resize: none;
+  font-family: inherit;
+}
+
+.post-info-form__notice {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  font-size: var(--font-size-sm);
+  color: var(--color-text-sub);
+}
+
+.post-info-form__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  font-size: var(--font-size-xs);
+}
+

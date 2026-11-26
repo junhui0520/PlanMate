@@ -1,9 +1,9 @@
 // PUB-04-01·03 공개 여행 상세 (/community/:postId, 와이어프레임 D-02). 로그인 없이 볼 수 있음
 // 위: 제목·작성자·도시·일수·좋아요·게시(수정) 시각·소개 + 오른쪽 버튼(PUB-04-03)
 // 가운데: N일차 탭 → 왼쪽 장소 목록(구간 한 줄, 누르면 상세 펼침) / 오른쪽 지도(PUB-04-02)
+// 내 게시물이면 [제목·소개 수정](PUB-02-05)·[비공개 전환](PUB-02-02)
 // TODO(D): 아래 댓글(PUB-08)은 그 단계에서 붙인다.
-// TODO(B 일정 화면 부품으로 교체): 일정 부분(N일차 탭·장소 카드·구간 줄)은 B 파트 일정 화면 모양을 따르기로 팀에서 정함(11/26).
-//   아래 segmentLine·placeLine·SegmentRow·일차 탭·장소 목록은 임시 모양이다. B 부품이 생기면 바꾸고 더 다듬지 않는다.
+// 일정 부분은 PublicSchedule (TODO(B 일정 화면 부품으로 교체)는 그 파일에)
 import { useEffect, useState } from 'react'
 import { useLocation, useNavigate, useParams } from 'react-router'
 import { ApiError } from '../../../shared/api/client'
@@ -11,22 +11,26 @@ import { Button } from '../../../shared/components/Button'
 import { EmptyState } from '../../../shared/components/EmptyState'
 import { Loading } from '../../../shared/components/Loading'
 import { useToast } from '../../../shared/hooks/useToast'
-import { formatRecordedAt, formatTime } from '../../../shared/utils/date'
+import { ConfirmDialog } from '../../../shared/components/ConfirmDialog'
+import { Modal } from '../../../shared/components/Modal'
+import { formatRecordedAt } from '../../../shared/utils/date'
 import {
   bookmarkPost,
   failMessage,
   getPublicPostDetail,
   likePost,
+  makePostPrivate,
   POST_NOT_VISIBLE,
   type PostDetail,
-  type PublicPlace,
-  type PublicSegment,
-  type SegmentMode,
   unbookmarkPost,
   unlikePost,
+  updatePostInfo,
 } from '../api/communityApi.ts'
 import BookmarkButton from '../components/BookmarkButton.tsx'
 import LikeButton from '../components/LikeButton.tsx'
+import PostInfoForm from '../components/PostInfoForm.tsx'
+import { hasPostTitle, isPostInfoChanged, toPostInfoRequest, type PostInfo } from '../utils/postInfo.ts'
+import PublicSchedule from '../components/PublicSchedule.tsx'
 import './PostDetailPage.css'
 
 type LoadState =
@@ -35,60 +39,84 @@ type LoadState =
   | { status: 'error' }
   | { status: 'done'; post: PostDetail }
 
-const MODE_LABEL: Record<SegmentMode, string> = { WALK: '도보', TRANSIT: '대중교통', CAR: '자동차' }
+// PUB-02-05 제목·소개 수정 창 (화면 가운데, 배경은 내 게시물 상세를 어둡게)
+// [저장]은 바뀐 내용이 있을 때만, 처리 중 "저장 중...", 성공하면 창 닫힘 + "수정 완료"
+function PostEditModal({
+  post,
+  onSaved,
+  onClose,
+}: {
+  post: PostDetail
+  onSaved: (updated: PostDetail) => void
+  onClose: () => void
+}) {
+  const toast = useToast()
+  const initial: PostInfo = { title: post.title, intro: post.intro ?? '' }
+  const [info, setInfo] = useState(initial)
+  const [saving, setSaving] = useState(false)
+  const [titleError, setTitleError] = useState<string>()
+  const [confirmDiscard, setConfirmDiscard] = useState(false)
+  const changed = isPostInfoChanged(initial, info)
 
-// "3.2km" / "850m"
-function formatDistance(meters: number): string {
-  return meters >= 1000 ? `${(meters / 1000).toFixed(1)}km` : `${meters}m`
-}
-
-// 구간 한 줄: "대중교통 15분(예상) · 3.2km", 이동시간이 없으면 "이동시간 미확인" (RTE-02-02와 같은 모양, 요금 없음)
-function segmentLine(seg: PublicSegment): string {
-  if (seg.durationMinutes === null) return '이동시간 미확인'
-  const time = `${MODE_LABEL[seg.mode]} ${seg.durationMinutes}분${seg.estimated ? '(예상)' : ''}`
-  return seg.distanceMeters === null ? time : `${time} · ${formatDistance(seg.distanceMeters)}`
-}
-
-// 장소 아래 줄: "카페 · 오전 11:45~오후 12:30 · 45분" (시간은 여행 도시 현지 시각 그대로, 12시간제)
-function placeLine(place: PublicPlace): string {
-  const time = place.startTime
-    ? place.endTime
-      ? `${formatTime(place.startTime)}~${formatTime(place.endTime)}`
-      : formatTime(place.startTime)
-    : null
-  return [place.category, time, place.stayMinutes !== null ? `${place.stayMinutes}분` : null].filter(Boolean).join(' · ')
-}
-
-// TODO(B 일정 화면 부품으로 교체) 임시 구간 줄
-// 장소 사이 구간: 대중교통 안내가 있으면 눌러서 노선·환승·도보 구간을 펼침
-function SegmentRow({ segment }: { segment: PublicSegment }) {
-  const [open, setOpen] = useState(false)
-  const details = [segment.transitSummary, segment.walkSummary].filter((d): d is string => Boolean(d))
-  if (details.length === 0) {
-    return <p className="post-segment">↓ {segmentLine(segment)}</p>
+  const save = async () => {
+    if (saving || !changed || !hasPostTitle(info)) return
+    setSaving(true)
+    try {
+      const updated = await updatePostInfo(post.postId, toPostInfoRequest(info))
+      onSaved(updated)
+      toast.show({ message: '수정 완료' })
+    } catch (e) {
+      const message = failMessage(e, '수정하지 못했어요. 다시 시도해 주세요.')
+      if (e instanceof ApiError && e.code === 'POST_TITLE_REQUIRED') setTitleError(message)
+      else toast.show({ message, type: 'error', action: e instanceof ApiError && e.code ? undefined : { label: '다시 시도', onClick: save } })
+    } finally {
+      setSaving(false)
+    }
   }
+
+  // [취소]: 고친 내용이 있으면 "작성 중인 내용을 버릴까요?"
+  const cancel = () => (changed ? setConfirmDiscard(true) : onClose())
+
   return (
-    <div className={open ? 'post-segment post-segment--open' : 'post-segment'}>
-      <button type="button" className="post-segment__toggle" aria-expanded={open} onClick={() => setOpen((v) => !v)}>
-        {open ? '' : '↓ '}
-        {segmentLine(segment)}
-      </button>
-      {open && (
-        <ul className="post-segment__details">
-          {details.map((d) => (
-            <li key={d}>{d}</li>
-          ))}
-        </ul>
-      )}
-    </div>
+    <>
+      <Modal
+        open
+        title="제목·소개 수정"
+        footer={
+          <>
+            <Button variant="secondary" onClick={cancel} disabled={saving}>
+              취소
+            </Button>
+            <Button onClick={save} disabled={!changed || !hasPostTitle(info)} loading={saving} loadingText="저장 중...">
+              저장
+            </Button>
+          </>
+        }
+      >
+        <PostInfoForm
+          value={info}
+          onChange={(next) => {
+            setInfo(next)
+            setTitleError(undefined)
+          }}
+          titleError={titleError}
+        />
+      </Modal>
+      <ConfirmDialog
+        open={confirmDiscard}
+        message="작성 중인 내용을 버릴까요?"
+        confirmLabel="버리기"
+        cancelLabel="취소"
+        onConfirm={onClose}
+        onCancel={() => setConfirmDiscard(false)}
+      />
+    </>
   )
 }
 
-function PostBody({ post }: { post: PostDetail }) {
+function PostBody({ post, onChanged }: { post: PostDetail; onChanged: (post: PostDetail) => void }) {
   const navigate = useNavigate()
   const location = useLocation()
-  const [dayNo, setDayNo] = useState(post.schedule[0]?.dayNo ?? 1) // 처음엔 1일차
-  const day = post.schedule.find((d) => d.dayNo === dayNo)
   const { viewer } = post
 
   // 비회원이 버튼을 누르면 로그인 화면으로. 로그인 후 이 게시물로 돌아오고, 누르려던 동작은 다시 눌러야 함
@@ -100,7 +128,7 @@ function PostBody({ post }: { post: PostDetail }) {
     }
     action()
   }
-  // TODO(D): 나머지 동작은 그 기능 단계에서 붙인다 (PUB-07 복제, PUB-09 신고, PUB-02-05 수정, PUB-02-02 비공개)
+  // TODO(D): 나머지 동작은 그 기능 단계에서 붙인다 (PUB-07 복제, PUB-09 신고)
   const notYet = () => {}
   const locked = viewer.loggedIn && !viewer.communityWritable // 이용 제한 회원: 버튼 모두 비활성
   const toast = useToast()
@@ -144,6 +172,31 @@ function PostBody({ post }: { post: PostDetail }) {
     }
   }
 
+  // PUB-02-05 제목·소개 수정 창
+  const [editing, setEditing] = useState(false)
+
+  // PUB-02-02 비공개 전환: 확인 창 → "비공개 전환 중..." → "비공개 전환 완료" + 내 게시글로 이동
+  const [confirmPrivate, setConfirmPrivate] = useState(false)
+  const [privating, setPrivating] = useState(false)
+  const goPrivate = async () => {
+    if (privating) return
+    setPrivating(true)
+    try {
+      await makePostPrivate(post.postId)
+      toast.show({ message: '비공개 전환 완료' })
+      navigate('/mypage/posts')
+    } catch (e) {
+      setConfirmPrivate(false)
+      toast.show({
+        message: failMessage(e, '비공개로 바꾸지 못했어요. 다시 시도해 주세요.'),
+        type: 'error',
+        action: e instanceof ApiError && e.code ? undefined : { label: '다시 시도', onClick: goPrivate },
+      })
+    } finally {
+      setPrivating(false)
+    }
+  }
+
   // "지은 · 도쿄 · 4일 · 좋아요 12 · 게시 10.20 · 수정 10.28" (고친 적 없으면 게시 시각만)
   const meta = [
     post.authorNickname,
@@ -174,10 +227,10 @@ function PostBody({ post }: { post: PostDetail }) {
           />
           {viewer.mine ? (
             <>
-              <Button variant="secondary" disabled={locked} onClick={notYet}>
+              <Button variant="secondary" disabled={locked} onClick={() => setEditing(true)}>
                 제목·소개 수정
               </Button>
-              <Button variant="secondary" disabled={locked} onClick={notYet}>
+              <Button variant="secondary" disabled={locked} onClick={() => setConfirmPrivate(true)}>
                 비공개 전환
               </Button>
             </>
@@ -201,42 +254,28 @@ function PostBody({ post }: { post: PostDetail }) {
       </header>
       {post.intro && <p className="post-detail__intro">{post.intro}</p>}
 
-      {/* TODO(B 일정 화면 부품으로 교체): N일차 탭·장소 카드·구간 줄은 임시 모양 */}
-      {/* N일차 탭 (실제 날짜는 보이지 않음) */}
-      <div className="post-detail__days" role="tablist" aria-label="일차">
-        {post.schedule.map((d) => (
-          <button
-            key={d.dayNo}
-            type="button"
-            role="tab"
-            aria-selected={d.dayNo === dayNo}
-            className={d.dayNo === dayNo ? 'post-day-tab post-day-tab--active' : 'post-day-tab'}
-            onClick={() => setDayNo(d.dayNo)}
-          >
-            {d.dayNo}일차
-          </button>
-        ))}
-      </div>
+      <PublicSchedule schedule={post.schedule} />
 
-      <div className="post-detail__body">
-        <ol className="post-places" aria-label={`${dayNo}일차 장소`}>
-          {day?.places.map((place) => (
-            <li key={place.order}>
-              <div className="post-place">
-                <span className="post-place__no">{place.order}</span>
-                <div>
-                  <p className="post-place__name">{place.name}</p>
-                  <p className="post-place__sub">{placeLine(place)}</p>
-                </div>
-              </div>
-              {place.segmentToNext && <SegmentRow segment={place.segmentToNext} />}
-            </li>
-          ))}
-        </ol>
-        {/* PUB-04-02 지도: C의 MapView(VIEW 모드)로 순서 번호 핀 + 방문 순서 직선. 좌표 없는 장소는 핀만 뺌
-            TODO(C에 요청): features/place/components/MapView.tsx가 생기면 이 자리에 넣는다 (경로 API 호출 없음) */}
-        <div className="post-map" aria-label="지도" />
-      </div>
+      {editing && (
+        <PostEditModal
+          post={post}
+          onSaved={(updated) => {
+            setEditing(false)
+            onChanged(updated) // 내 게시물 상세에 바로 반영
+          }}
+          onClose={() => setEditing(false)}
+        />
+      )}
+      <ConfirmDialog
+        open={confirmPrivate}
+        message="북마크한 회원도 볼 수 없게 돼요. 이미 복제된 여행은 남아요."
+        confirmLabel="비공개 전환"
+        cancelLabel="취소"
+        confirmLoading={privating}
+        confirmLoadingText="비공개 전환 중..."
+        onConfirm={goPrivate}
+        onCancel={() => setConfirmPrivate(false)}
+      />
     </>
   )
 }
@@ -310,7 +349,7 @@ function PostDetailLoader({ postIdParam }: { postIdParam: string | undefined }) 
           }
         />
       )}
-      {state.status === 'done' && <PostBody post={state.post} />}
+      {state.status === 'done' && <PostBody post={state.post} onChanged={(post) => setState({ status: 'done', post })} />}
     </main>
   )
 }

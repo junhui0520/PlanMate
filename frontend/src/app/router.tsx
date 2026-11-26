@@ -14,6 +14,7 @@ import { createBrowserRouter, Navigate } from 'react-router';
 import { RouterProvider } from 'react-router/dom';
 import CommunityListPage from '../features/community/pages/CommunityListPage';
 import MyBookmarksPage from '../features/community/pages/MyBookmarksPage';
+import PostCreatePage from '../features/community/pages/PostCreatePage';
 import PostDetailPage from '../features/community/pages/PostDetailPage';
 import { EmptyState } from '../shared/components/EmptyState';
 import { AdminLayout } from './layouts/AdminLayout';
@@ -49,7 +50,7 @@ const router = createBrowserRouter([
       { path: 'trips/trash', element: <RoutePlaceholder screen="B-11" title="휴지통" pageFile="trip/pages/TrashPage.tsx" part="B" /> },
       { path: 'trips/:tripId', element: <RoutePlaceholder screen="B-03" title="여행 화면(일정·후보·체크리스트 탭)" pageFile="schedule/pages/TripDetailPage.tsx" part="B" /> },
       { path: 'trips/:tripId/budget', element: <RoutePlaceholder screen="D-11" title="경비 탭" pageFile="budget/pages/BudgetPage.tsx" part="D" /> },
-      { path: 'trips/:tripId/share', element: <RoutePlaceholder screen="D-08" title="공개 미리보기" pageFile="community/pages/PostCreatePage.tsx" part="D" /> },
+      { path: 'trips/:tripId/share', element: <PostCreatePage /> },
       { path: 'community', element: <CommunityListPage /> },
       { path: 'community/:postId', element: <PostDetailPage /> },
       {

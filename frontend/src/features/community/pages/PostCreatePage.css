@@ -1,0 +1,71 @@
+/* PUB-01-01·02 공유하기·공개 미리보기 (와이어프레임 D-07·D-08). 값은 shared/styles/variables.css */
+.post-create {
+  max-width: var(--layout-max-width);
+  margin: 0 auto;
+  padding: var(--space-7) var(--space-8);
+}
+
+/* D-07: 창 뒤 배경 (피그마에서는 B의 여행 화면을 어둡게) */
+.post-create--dim {
+  min-height: 60vh;
+}
+
+.post-create__modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--space-4);
+}
+
+.post-create__modal-title {
+  margin: 0;
+  font-size: var(--font-size-xl);
+  font-weight: var(--font-weight-bold);
+}
+
+.post-create__close {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--color-text);
+  font-size: var(--font-size-xxl);
+  line-height: 1;
+  cursor: pointer;
+}
+
+/* D-08 위쪽 안내 띠 */
+.post-create__notice {
+  margin: 0 0 var(--space-5);
+  padding: var(--space-3) var(--space-4);
+  background: var(--color-disabled-bg);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-bold);
+}
+
+.post-create__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-4);
+}
+
+.post-create__title {
+  margin: 0;
+  font-size: var(--font-size-xl);
+  font-weight: var(--font-weight-bold);
+}
+
+.post-create__intro {
+  margin: var(--space-1) 0 0;
+  font-size: var(--font-size-sm);
+  color: var(--color-text-sub);
+  white-space: pre-line;
+}
+
+.post-create__actions {
+  display: flex;
+  flex: none;
+  gap: var(--space-2);
+}
