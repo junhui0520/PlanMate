@@ -35,6 +35,15 @@ public enum ErrorCode {
     // ===== A 파트 (auth·member·participant·notification·admin·savedplace·weather·checklist·cs) =====
 
     // ===== B 파트 (trip·schedule·collab) =====
+    // TRP-01-01·03 여행 생성
+    TRIP_LIMIT_EXCEEDED(HttpStatus.CONFLICT, "참여 중인 여행을 포함해 여행은 최대 3개까지 가질 수 있어요. 기존 여행을 삭제하거나 나가면 더 만들 수 있어요."),
+    TRIP_END_DATE_BEFORE_START(HttpStatus.BAD_REQUEST, "종료일은 시작일과 같거나 이후여야 해요."),
+    TRIP_PERIOD_TOO_LONG(HttpStatus.BAD_REQUEST, "여행 기간은 최대 7일까지 만들 수 있어요."),
+    TRIP_START_DATE_OUT_OF_RANGE(HttpStatus.BAD_REQUEST, "시작일은 오늘부터 1년 후까지 고를 수 있어요."),
+    TRIP_CREATE_FAILED(HttpStatus.INTERNAL_SERVER_ERROR, "여행을 만들지 못했어요. 잠시 후 다시 시도해 주세요."),
+    // TRP-01-02 도시 검색·선택
+    CITY_SEARCH_FAILED(HttpStatus.BAD_GATEWAY, "도시를 검색하지 못했어요. 다시 시도해 주세요."),
+    CITY_INFO_FAILED(HttpStatus.BAD_GATEWAY, "도시 정보를 불러오지 못했어요. 다시 시도해 주세요."),
 
     // ===== C 파트 (place·ai·route) =====
 
