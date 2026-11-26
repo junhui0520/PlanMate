@@ -142,6 +142,10 @@ components:
         - 조회 참여자가 공통 경비를 추가하면 BUDGET_COMMON_EDIT_FORBIDDEN, 개인 경비면 EDIT_PERMISSION_CHANGED
         - 그 밖에 화면이 먼저 막는 값(글자 수 초과, 제어문자, 통화 자릿수 초과, 원화 기준 1억 초과,
           환율 없는 통화, 개인 경비의 메모·계산 방식, 금액과 priceUnknown을 함께 보냄)은 INVALID_INPUT
+        - BUD-02-01 예산 기준 계산(budgetRule)이면 금액은 서버가 계산한다(amount는 null, 공통·TOTAL만, 추가에서만).
+          기준 금액이 없으면 BUDGET_BASE_AMOUNT_REQUIRED "기준 금액을 입력해 주세요."
+          저장된 항목은 amountSource BUDGET_RULE, calcNote "30,000원 × 4명 × 3일 = 360,000원",
+          estimateBasis {"baseAmount":30000,"currency":"KRW","people":4,"days":3,"times":null}
       required: [scope, category, name, priceUnknown, currency]
       properties:
         scope:
@@ -174,6 +178,27 @@ components:
         memo:
           type: [string, "null"]
           description: "공통 경비만 0~200자, 제어문자 불가"
+        budgetRule:
+          description: "BUD-02-01 예산 기준 계산으로 넣을 때만. 기준 금액 x 선택한 값들(곱할 값이 없으면 기준 금액 그대로)"
+          oneOf:
+            - type: "null"
+            - type: object
+              required: [baseAmount, multiplyPeople]
+              properties:
+                baseAmount:
+                  type: [number, "null"]
+                  description: "기준 금액 (필수, 0 이상, 통화 표준 자릿수까지)"
+                  example: 30000
+                multiplyPeople:
+                  type: boolean
+                  description: "x 여행 인원 (인원은 여행 정보에서 자동)"
+                days:
+                  type: [integer, "null"]
+                  description: "x 일수 1~7 (안 곱하면 null)"
+                  example: 3
+                times:
+                  type: [integer, "null"]
+                  description: "x 횟수 1~99 (안 곱하면 null)"
 
     # ---- BUD-03 경비 합계 (계산은 서버에서만) ----
     BudgetSummaryResponse:

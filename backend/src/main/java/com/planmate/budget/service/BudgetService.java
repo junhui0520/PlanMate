@@ -1,6 +1,7 @@
 package com.planmate.budget.service;
 
 import java.math.BigDecimal;
+import java.text.DecimalFormat;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -55,9 +56,11 @@ public class BudgetService {
 	 *                 TripAccessChecker로 저장 직전에 다시 확인하고, 휴지통 여행은 막는다 (pjh/security 머지 후).
 	 *                 추가 주소(POST /api/trips/{tripId}/budget-items)는 그때 연다(11/26 결정).
 	 * TODO(B에 요청): 저장 후 다른 참여자 화면 반영은 SyncService (COL-06-01)
+	 * TODO(B에 요청): peopleCount(여행 인원)는 TripService에서 받는다. 지금은 매개변수(예산 기준 계산에만 씀).
 	 */
 	@Transactional
-	public BudgetItemResponse addBudgetItem(Long tripId, Long memberId, boolean canEdit, BudgetItemRequest req) {
+	public BudgetItemResponse addBudgetItem(Long tripId, Long memberId, boolean canEdit, int peopleCount,
+			BudgetItemRequest req) {
 		if (req.scope() == null || req.category() == null) {
 			throw new BusinessException(ErrorCode.INVALID_INPUT);
 		}
@@ -73,12 +76,87 @@ public class BudgetService {
 		String memo = checkMemo(common, req.memo());
 		checkCalcType(common, req.calcType());
 		String currency = checkCurrency(req.currency());
-		BigDecimal amount = checkAmount(req.amount(), req.priceUnknown(), currency);
+
+		// BUD-02-01 예산 기준 계산이면 금액은 서버가 정해진 산식으로만 계산한다
+		RuleResult rule = req.budgetRule() == null ? null : applyBudgetRule(req, common, currency, peopleCount);
+		BigDecimal amount = rule != null ? rule.total() : checkAmount(req.amount(), req.priceUnknown(), currency);
 		checkLimit(tripId, memberId, req.scope());
 
-		BudgetItem saved = budgetItemRepository.save(BudgetItem.create(tripId, req.scope(), req.category(), name,
-				common ? req.calcType() : null, amount, currency, BudgetItem.AmountSource.MANUAL, memo, memberId));
-		return BudgetItemResponse.from(saved);
+		BudgetItem.AmountSource source = rule != null ? BudgetItem.AmountSource.BUDGET_RULE : BudgetItem.AmountSource.MANUAL;
+		BudgetItem item = BudgetItem.create(tripId, req.scope(), req.category(), name,
+				common ? req.calcType() : null, amount, currency, source, memo, memberId);
+		if (rule != null) {
+			item.recordBasis(rule.calcNote(), rule.estimateBasis());
+		}
+		return BudgetItemResponse.from(budgetItemRepository.save(item));
+	}
+
+	/** BUD-02-01 계산 결과: 금액, 사람이 읽는 문장(CALC_NOTE), 다시 계산할 수 있는 기준값(ESTIMATE_BASIS) */
+	record RuleResult(BigDecimal total, String calcNote, String estimateBasis) {
+	}
+
+	static final int RULE_DAYS_MAX = 7; // BUD-02-01 일수 1~7
+	static final int RULE_TIMES_MAX = 99; // BUD-02-01 횟수 1~99
+
+	/**
+	 * BUD-02-01 예산 기준 계산: 기준 금액 x 선택한 값들(여행 인원 / 일수 / 횟수).
+	 * 공통 경비만, 계산 방식은 '전체 금액', 금액 칸은 비워서 보내야 한다(서버가 계산). 금액 규칙은 BUD-01-02와 같다.
+	 * TODO(B에 요청): 여행 인원을 곱한 항목은 인원이 바뀌면 다시 계산 (ESTIMATE_BASIS의 people로 찾음, BUD-03-04)
+	 */
+	private RuleResult applyBudgetRule(BudgetItemRequest req, boolean common, String currency, int peopleCount) {
+		BudgetItemRequest.BudgetRule rule = req.budgetRule();
+		if (!common || req.calcType() != BudgetItem.CalcType.TOTAL || req.amount() != null || req.priceUnknown()) {
+			throw new BusinessException(ErrorCode.INVALID_INPUT);
+		}
+		if (rule.baseAmount() == null) {
+			throw new BusinessException(ErrorCode.BUDGET_BASE_AMOUNT_REQUIRED);
+		}
+		if (rule.baseAmount().signum() < 0) {
+			throw new BusinessException(ErrorCode.BUDGET_AMOUNT_NEGATIVE);
+		}
+		if (Math.max(0, rule.baseAmount().stripTrailingZeros().scale()) > BudgetSummaryService.currencyDigits(currency)
+				|| (rule.days() != null && (rule.days() < 1 || rule.days() > RULE_DAYS_MAX))
+				|| (rule.times() != null && (rule.times() < 1 || rule.times() > RULE_TIMES_MAX))
+				|| (rule.multiplyPeople() && peopleCount < 1)) {
+			throw new BusinessException(ErrorCode.INVALID_INPUT);
+		}
+
+		BigDecimal total = rule.baseAmount();
+		StringBuilder note = new StringBuilder(formatMoney(rule.baseAmount(), currency));
+		if (rule.multiplyPeople()) {
+			total = total.multiply(BigDecimal.valueOf(peopleCount));
+			note.append(" × ").append(peopleCount).append("명");
+		}
+		if (rule.days() != null) {
+			total = total.multiply(BigDecimal.valueOf(rule.days()));
+			note.append(" × ").append(rule.days()).append("일");
+		}
+		if (rule.times() != null) {
+			total = total.multiply(BigDecimal.valueOf(rule.times()));
+			note.append(" × ").append(rule.times()).append("회");
+		}
+		checkAmount(total, false, currency); // 결과도 금액 규칙(1억 이하 등)을 지킨다
+		note.append(" = ").append(formatMoney(total, currency)); // 예: "30,000원 × 4명 × 3일 = 360,000원"
+
+		// 정한 내용(11/26): 기준값은 인원이 바뀌면 다시 계산할 수 있게 값을 정리한 형태로 저장
+		String basis = "{\"baseAmount\":%s,\"currency\":\"%s\",\"people\":%s,\"days\":%s,\"times\":%s}".formatted(
+				rule.baseAmount().stripTrailingZeros().toPlainString(), currency,
+				rule.multiplyPeople() ? peopleCount : "null", rule.days(), rule.times());
+		return new RuleResult(total, note.toString(), basis);
+	}
+
+	// 화면 shared/utils/money.ts formatMoney와 같은 모양: 30,000원 / ¥30,000 / $12.50 / €12.50
+	static String formatMoney(BigDecimal amount, String currency) {
+		int digits = BudgetSummaryService.currencyDigits(currency);
+		DecimalFormat format = new DecimalFormat(digits == 0 ? "#,##0" : "#,##0." + "0".repeat(digits));
+		String number = format.format(BudgetSummaryService.round(amount, currency));
+		return switch (currency) {
+			case KRW -> number + "원";
+			case "JPY" -> "¥" + number;
+			case "USD" -> "$" + number;
+			case "EUR" -> "€" + number;
+			default -> number + " " + currency;
+		};
 	}
 
 	/**
@@ -92,8 +170,8 @@ public class BudgetService {
 	public BudgetItemResponse updateBudgetItem(Long tripId, Long itemId, Long memberId, boolean canEdit,
 			BudgetItemRequest req) {
 		BudgetItem item = findEditableItem(tripId, itemId, memberId, canEdit);
-		// 구분(공통·개인)은 수정으로 바꿀 수 없음
-		if (req.scope() != item.getScope() || req.category() == null) {
+		// 구분(공통·개인)은 수정으로 바꿀 수 없음. 예산 기준 계산은 추가 창에서만(정한 내용 11/26)
+		if (req.scope() != item.getScope() || req.category() == null || req.budgetRule() != null) {
 			throw new BusinessException(ErrorCode.INVALID_INPUT);
 		}
 		boolean common = item.getScope() == Scope.COMMON;

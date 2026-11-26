@@ -64,16 +64,16 @@ class BudgetServiceTest {
 	// 공통 경비 기본 입력 (식비, 1인당 30,000원)
 	private static BudgetItemRequest common(String name, String amount, String currency) {
 		return new BudgetItemRequest(Scope.COMMON, Category.FOOD, name, CalcType.PER_PERSON,
-				amount == null ? null : new BigDecimal(amount), false, currency, null);
+				amount == null ? null : new BigDecimal(amount), false, currency, null, null);
 	}
 
 	private static BudgetItemRequest personal(String name, String amount, String currency) {
 		return new BudgetItemRequest(Scope.PERSONAL, Category.TRANSPORT, name, null,
-				amount == null ? null : new BigDecimal(amount), false, currency, null);
+				amount == null ? null : new BigDecimal(amount), false, currency, null, null);
 	}
 
 	private BudgetItemResponse add(BudgetItemRequest req) {
-		return service.addBudgetItem(TRIP, ME, true, req);
+		return service.addBudgetItem(TRIP, ME, true, 4, req);
 	}
 
 	private static void assertError(ErrorCode expected, Executable action) {
@@ -86,7 +86,7 @@ class BudgetServiceTest {
 	@Test
 	void 공통_경비를_저장한다() {
 		BudgetItemRequest req = new BudgetItemRequest(Scope.COMMON, Category.FOOD, "  저녁 식사  ", CalcType.PER_PERSON,
-				new BigDecimal("30000"), false, "KRW", "  3박, 조식 포함 ");
+				new BigDecimal("30000"), false, "KRW", "  3박, 조식 포함 ", null);
 
 		BudgetItemResponse r = add(req);
 
@@ -110,7 +110,7 @@ class BudgetServiceTest {
 	@Test
 	void 가격_확인_전이면_금액을_비워_저장한다_0원이_아님() {
 		BudgetItemRequest req = new BudgetItemRequest(Scope.COMMON, Category.SIGHTSEEING, "입장권", CalcType.TOTAL,
-				null, true, "JPY", null);
+				null, true, "JPY", null, null);
 
 		assertNull(add(req).amount());
 	}
@@ -165,13 +165,13 @@ class BudgetServiceTest {
 	@Test
 	void 조회_참여자는_공통_경비를_추가할_수_없다() {
 		assertError(ErrorCode.BUDGET_COMMON_EDIT_FORBIDDEN,
-				() -> service.addBudgetItem(TRIP, ME, false, common("점심", "1000", "JPY")));
+				() -> service.addBudgetItem(TRIP, ME, false, 4, common("점심", "1000", "JPY")));
 	}
 
 	@Test
 	void 조회_참여자는_개인_경비도_추가할_수_없다_공통_문구() {
 		assertError(ErrorCode.EDIT_PERMISSION_CHANGED,
-				() -> service.addBudgetItem(TRIP, ME, false, personal("택시", "1000", "JPY")));
+				() -> service.addBudgetItem(TRIP, ME, false, 4, personal("택시", "1000", "JPY")));
 	}
 
 	// ---- 화면이 먼저 막는 값 (서버도 다시 검사, 공통 INVALID_INPUT) ----
@@ -185,23 +185,23 @@ class BudgetServiceTest {
 	void 항목명_메모에_제어문자가_있으면_거절한다() {
 		assertError(ErrorCode.INVALID_INPUT, () -> add(personal("점심\t라멘", "100", "KRW")));
 		BudgetItemRequest memo = new BudgetItemRequest(Scope.COMMON, Category.FOOD, "점심", CalcType.TOTAL,
-				new BigDecimal("100"), false, "KRW", "줄\n바꿈");
+				new BigDecimal("100"), false, "KRW", "줄\n바꿈", null);
 		assertError(ErrorCode.INVALID_INPUT, () -> add(memo));
 	}
 
 	@Test
 	void 메모_201자는_거절한다() {
 		BudgetItemRequest req = new BudgetItemRequest(Scope.COMMON, Category.FOOD, "점심", CalcType.TOTAL,
-				new BigDecimal("100"), false, "KRW", "가".repeat(201));
+				new BigDecimal("100"), false, "KRW", "가".repeat(201), null);
 		assertError(ErrorCode.INVALID_INPUT, () -> add(req));
 	}
 
 	@Test
 	void 개인_경비에_메모나_계산_방식이_오면_거절한다() {
 		BudgetItemRequest withMemo = new BudgetItemRequest(Scope.PERSONAL, Category.ETC, "기념품", null,
-				new BigDecimal("100"), false, "KRW", "메모");
+				new BigDecimal("100"), false, "KRW", "메모", null);
 		BudgetItemRequest withCalc = new BudgetItemRequest(Scope.PERSONAL, Category.ETC, "기념품", CalcType.TOTAL,
-				new BigDecimal("100"), false, "KRW", null);
+				new BigDecimal("100"), false, "KRW", null, null);
 		assertError(ErrorCode.INVALID_INPUT, () -> add(withMemo));
 		assertError(ErrorCode.INVALID_INPUT, () -> add(withCalc));
 	}
@@ -209,9 +209,9 @@ class BudgetServiceTest {
 	@Test
 	void 공통_경비에_계산_방식이_없거나_분류가_없으면_거절한다() {
 		BudgetItemRequest noCalc = new BudgetItemRequest(Scope.COMMON, Category.FOOD, "점심", null,
-				new BigDecimal("100"), false, "KRW", null);
+				new BigDecimal("100"), false, "KRW", null, null);
 		BudgetItemRequest noCategory = new BudgetItemRequest(Scope.COMMON, null, "점심", CalcType.TOTAL,
-				new BigDecimal("100"), false, "KRW", null);
+				new BigDecimal("100"), false, "KRW", null, null);
 		assertError(ErrorCode.INVALID_INPUT, () -> add(noCalc));
 		assertError(ErrorCode.INVALID_INPUT, () -> add(noCategory));
 	}
@@ -238,7 +238,7 @@ class BudgetServiceTest {
 	@Test
 	void 금액과_가격_확인_전을_함께_보내면_거절한다() {
 		BudgetItemRequest req = new BudgetItemRequest(Scope.COMMON, Category.SIGHTSEEING, "입장권", CalcType.TOTAL,
-				new BigDecimal("1000"), true, "JPY", null);
+				new BigDecimal("1000"), true, "JPY", null, null);
 		assertError(ErrorCode.INVALID_INPUT, () -> add(req));
 	}
 
@@ -278,7 +278,7 @@ class BudgetServiceTest {
 	void 공통_경비를_수정하면_고친_값으로_바뀐다() {
 		existing(3L, Scope.COMMON, TRIP, OTHER, AmountSource.MANUAL); // 다른 사람이 만든 공통 경비도 편집 참여자면 수정 가능
 		BudgetItemRequest req = new BudgetItemRequest(Scope.COMMON, Category.LODGING, " 숙소 ", CalcType.TOTAL,
-				new BigDecimal("40000"), false, "JPY", "3박");
+				new BigDecimal("40000"), false, "JPY", "3박", null);
 
 		BudgetItemResponse r = service.updateBudgetItem(TRIP, 3L, ME, true, req);
 
@@ -294,7 +294,7 @@ class BudgetServiceTest {
 	@Test
 	void 내_개인_경비를_가격_확인_전으로_고칠_수_있다() {
 		existing(5L, Scope.PERSONAL, TRIP, ME, AmountSource.MANUAL);
-		BudgetItemRequest req = new BudgetItemRequest(Scope.PERSONAL, Category.ETC, "기념품", null, null, true, "JPY", null);
+		BudgetItemRequest req = new BudgetItemRequest(Scope.PERSONAL, Category.ETC, "기념품", null, null, true, "JPY", null, null);
 
 		assertNull(service.updateBudgetItem(TRIP, 5L, ME, true, req).amount());
 	}
@@ -303,7 +303,7 @@ class BudgetServiceTest {
 	void 교통비로_들어온_항목도_고칠_수_있고_입력_방식은_그대로다() {
 		existing(1L, Scope.COMMON, TRIP, ME, AmountSource.ROUTE_FARE);
 		BudgetItemRequest req = new BudgetItemRequest(Scope.COMMON, Category.TRANSPORT, "1일차 교통비", CalcType.PER_PERSON,
-				new BigDecimal("500"), false, "JPY", null);
+				new BigDecimal("500"), false, "JPY", null, null);
 
 		assertEquals(AmountSource.ROUTE_FARE, service.updateBudgetItem(TRIP, 1L, ME, true, req).amountSource());
 	}
@@ -434,6 +434,81 @@ class BudgetServiceTest {
 		assertEquals(AmountSource.ROUTE_FARE, r.amountSource());
 		assertEquals("¥400 x 4명", r.calcNote());
 		assertNull(r.estimateBasis());
+	}
+
+	// ==================== BUD-02-01 예산 기준 계산 ====================
+
+	// 공통 경비 + 예산 기준 (금액 칸은 비우고 보냄, 서버가 계산)
+	private static BudgetItemRequest rule(String base, String currency, boolean people, Integer days, Integer times) {
+		return new BudgetItemRequest(Scope.COMMON, Category.FOOD, "저녁 식사", CalcType.TOTAL, null, false, currency, null,
+				new BudgetItemRequest.BudgetRule(base == null ? null : new BigDecimal(base), people, days, times));
+	}
+
+	@Test
+	void 기준_금액_x_인원_x_일수로_계산해_예산_기준_항목을_만든다() {
+		BudgetItemResponse r = add(rule("30000", "KRW", true, 3, null));
+
+		// 기능정의서 예시 "30,000원 x 4명 x 3일 = 360,000원"
+		assertEquals(0, new BigDecimal("360000").compareTo(r.amount()));
+		assertEquals(CalcType.TOTAL, r.calcType()); // 계산 방식 '전체 금액'
+		assertEquals(AmountSource.BUDGET_RULE, r.amountSource()); // 근거 '예산 기준'
+		assertEquals("30,000원 × 4명 × 3일 = 360,000원", r.calcNote());
+		assertEquals("{\"baseAmount\":30000,\"currency\":\"KRW\",\"people\":4,\"days\":3,\"times\":null}",
+				r.estimateBasis()); // 나중에 인원이 바뀌면 다시 계산할 수 있는 기준값
+	}
+
+	@Test
+	void 횟수만_곱하거나_아무것도_안_곱할_수_있다() {
+		assertEquals("¥1,200 × 3회 = ¥3,600", add(rule("1200", "JPY", false, null, 3)).calcNote());
+		// 정한 내용(11/26): 곱할 값을 하나도 고르지 않으면 기준 금액 그대로
+		assertEquals(0, new BigDecimal("50000").compareTo(add(rule("50000", "KRW", false, null, null)).amount()));
+	}
+
+	@Test
+	void 달러는_소수_둘째_자리로_적는다() {
+		assertEquals("$12.50 × 4명 = $50.00", add(rule("12.5", "USD", true, null, null)).calcNote());
+	}
+
+	@Test
+	void 기준_금액이_없으면_기준_금액을_입력해_주세요() {
+		assertError(ErrorCode.BUDGET_BASE_AMOUNT_REQUIRED, () -> add(rule(null, "KRW", true, 3, null)));
+		assertEquals("기준 금액을 입력해 주세요.", ErrorCode.BUDGET_BASE_AMOUNT_REQUIRED.getMessage());
+	}
+
+	@Test
+	void 일수는_1에서_7_횟수는_1에서_99() {
+		add(rule("1000", "KRW", false, 7, 99));
+		assertError(ErrorCode.INVALID_INPUT, () -> add(rule("1000", "KRW", false, 8, null)));
+		assertError(ErrorCode.INVALID_INPUT, () -> add(rule("1000", "KRW", false, 0, null)));
+		assertError(ErrorCode.INVALID_INPUT, () -> add(rule("1000", "KRW", false, null, 100)));
+	}
+
+	@Test
+	void 계산_결과도_금액_규칙을_지킨다() {
+		assertError(ErrorCode.BUDGET_AMOUNT_NEGATIVE, () -> add(rule("-1", "KRW", true, null, null)));
+		// 30,000,000원 x 4명 = 1억 2천만원 → 원화 기준 1억 초과
+		assertError(ErrorCode.INVALID_INPUT, () -> add(rule("30000000", "KRW", true, null, null)));
+		assertError(ErrorCode.INVALID_INPUT, () -> add(rule("100.5", "JPY", false, null, null))); // 엔은 정수
+	}
+
+	@Test
+	void 예산_기준은_공통_경비_전체_금액으로만_금액_칸은_비워서() {
+		BudgetItemRequest personalRule = new BudgetItemRequest(Scope.PERSONAL, Category.FOOD, "점심", null, null, false,
+				"KRW", null, new BudgetItemRequest.BudgetRule(new BigDecimal("1000"), false, null, null));
+		BudgetItemRequest perPerson = new BudgetItemRequest(Scope.COMMON, Category.FOOD, "점심", CalcType.PER_PERSON, null,
+				false, "KRW", null, new BudgetItemRequest.BudgetRule(new BigDecimal("1000"), true, null, null));
+		BudgetItemRequest withAmount = new BudgetItemRequest(Scope.COMMON, Category.FOOD, "점심", CalcType.TOTAL,
+				new BigDecimal("5000"), false, "KRW", null, new BudgetItemRequest.BudgetRule(new BigDecimal("1000"), true, null, null));
+		assertError(ErrorCode.INVALID_INPUT, () -> add(personalRule));
+		assertError(ErrorCode.INVALID_INPUT, () -> add(perPerson));
+		assertError(ErrorCode.INVALID_INPUT, () -> add(withAmount)); // 금액은 서버가 계산 (화면 값을 믿지 않음)
+	}
+
+	@Test
+	void 수정에서는_예산_기준_계산을_쓰지_않는다() {
+		existing(3L, Scope.COMMON, TRIP, ME, AmountSource.MANUAL);
+
+		assertError(ErrorCode.INVALID_INPUT, () -> service.updateBudgetItem(TRIP, 3L, ME, true, rule("1000", "KRW", true, null, null)));
 	}
 
 }

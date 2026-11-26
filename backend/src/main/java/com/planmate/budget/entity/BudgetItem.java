@@ -119,6 +119,12 @@ public class BudgetItem {
 		this.memo = memo;
 	}
 
+	/** BUD-02-01 예산 기준 계산으로 넣은 항목의 근거 (금액 계산 설명·자동 계산 기준값) */
+	public void recordBasis(String calcNote, String estimateBasis) {
+		this.calcNote = calcNote;
+		this.estimateBasis = estimateBasis;
+	}
+
 	/** BUD-02-03 펼친 칸에서 메모만 작성·수정·삭제(null이면 삭제). 나중에 저장한 값으로 덮어쓴다 */
 	public void updateMemo(String memo) {
 		this.memo = memo;
