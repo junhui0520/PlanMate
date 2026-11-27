@@ -1,4 +1,4 @@
-// 커뮤니티 서버 호출 (PUB-01 공유·게시, PUB-02 비공개·수정, PUB-03 목록, PUB-04 상세, PUB-05 좋아요, PUB-06 북마크). 약속: contracts/community.yaml
+// 커뮤니티 서버 호출 (PUB-01 공유·게시, PUB-02 내 게시물, PUB-03 목록, PUB-04 상세, PUB-05 좋아요, PUB-06 북마크, PUB-08 댓글). 약속: contracts/community.yaml
 // 지금은 가짜 데이터(mockData.ts)를 돌려준다. 화면 파일은 이 파일의 함수만 부른다.
 // TODO(D): 서버 API가 생기고 A가 로그인 없이 열어 주면
 //          1) 각 함수 안쪽을 shared/api/client.ts 호출로 바꾸고
@@ -7,6 +7,9 @@ import { ApiError, type PageResponse } from '../../../shared/api/client'
 import {
   mockBookmarkPost,
   mockGetCityOptions,
+  mockDeleteComment,
+  mockEditComment,
+  mockGetComments,
   mockGetMyBookmarks,
   mockGetMyPosts,
   mockGetPostPreview,
@@ -17,6 +20,7 @@ import {
   mockMakePostPrivate,
   mockPublishPost,
   mockUpdatePostInfo,
+  mockWriteComment,
   mockUnbookmarkPost,
   mockUnlikePost,
 } from '../mockData.ts'
@@ -263,6 +267,41 @@ export const MY_POST_PAGE_SIZE = 10 // PUB-02-04 10개씩
 /** PUB-02-04 내 게시글: GET /api/community/my-posts (게시·수정 시각 최신순) */
 export function getMyPosts(after?: number, page = 0): Promise<PageResponse<MyPostItem>> {
   return mockGetMyPosts(after, page)
+}
+
+// ---- PUB-08 공개 댓글 ----
+
+// 댓글 한 개: 닉네임 · 내용 · 작성 시각, 고쳤으면 "수정됨". 내용은 글자로만 표시(HTML 실행 안 함)
+export interface CommentItem {
+  commentId: number
+  content: string
+  authorNickname: string | null
+  createdAt: string
+  edited: boolean
+  mine: boolean // 내 댓글이면 [···] [수정] [삭제]
+}
+
+export const COMMENT_PAGE_SIZE = 20 // PUB-08-02 20개씩
+export const COMMENT_MAX = 500 // PUB-08-01 1~500자
+
+/** PUB-08-02 댓글 목록 (비회원 가능): GET /api/community/posts/{postId}/comments (오래된 순) */
+export function getComments(postId: number, after?: number, page = 0): Promise<PageResponse<CommentItem>> {
+  return mockGetComments(postId, after, page)
+}
+
+/** PUB-08-01 댓글 작성: POST /api/community/posts/{postId}/comments (같은 회원 10초에 1개) */
+export function writeComment(postId: number, content: string): Promise<CommentItem> {
+  return mockWriteComment(postId, content)
+}
+
+/** PUB-08-03 본인 댓글 수정: PUT /api/community/comments/{commentId} */
+export function editComment(commentId: number, content: string): Promise<CommentItem> {
+  return mockEditComment(commentId, content)
+}
+
+/** PUB-08-04 본인 댓글 삭제: DELETE /api/community/comments/{commentId} */
+export function deleteComment(commentId: number): Promise<void> {
+  return mockDeleteComment(commentId)
 }
 
 /** 실패 안내 문구: 서버가 보낸 규칙 위반 문구(볼 수 없는 게시물·이용 제한·200개 초과 등)가 있으면 그 문구, 없으면 기능의 실패 문구 */

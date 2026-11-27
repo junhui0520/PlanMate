@@ -2,7 +2,7 @@
 // 위: 제목·작성자·도시·일수·좋아요·게시(수정) 시각·소개 + 오른쪽 버튼(PUB-04-03)
 // 가운데: N일차 탭 → 왼쪽 장소 목록(구간 한 줄, 누르면 상세 펼침) / 오른쪽 지도(PUB-04-02)
 // 내 게시물이면 [제목·소개 수정](PUB-02-05)·[비공개 전환](PUB-02-02)
-// TODO(D): 아래 댓글(PUB-08)은 그 단계에서 붙인다.
+// 아래: 댓글(PUB-08, CommentList)
 // 일정 부분은 PublicSchedule (TODO(B 일정 화면 부품으로 교체)는 그 파일에)
 import { useEffect, useState } from 'react'
 import { useLocation, useNavigate, useParams } from 'react-router'
@@ -27,6 +27,7 @@ import {
   updatePostInfo,
 } from '../api/communityApi.ts'
 import BookmarkButton from '../components/BookmarkButton.tsx'
+import CommentList from '../components/CommentList.tsx'
 import LikeButton from '../components/LikeButton.tsx'
 import PostInfoForm from '../components/PostInfoForm.tsx'
 import { hasPostTitle, isPostInfoChanged, toPostInfoRequest, type PostInfo } from '../utils/postInfo.ts'
@@ -255,6 +256,9 @@ function PostBody({ post, onChanged }: { post: PostDetail; onChanged: (post: Pos
       {post.intro && <p className="post-detail__intro">{post.intro}</p>}
 
       <PublicSchedule schedule={post.schedule} />
+
+      {/* PUB-08 댓글: 목록·입력칸·본인 댓글 수정·삭제 */}
+      <CommentList postId={post.postId} loggedIn={viewer.loggedIn} />
 
       {editing && (
         <PostEditModal

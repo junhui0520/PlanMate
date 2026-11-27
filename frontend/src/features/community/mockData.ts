@@ -24,6 +24,9 @@
 //   ?mock=publish-error | already-public     (게시 실패 / 그사이 이미 공개)
 //
 // 내 북마크(/mypage/bookmarks): ?mock=loading | empty | error | more-error
+// 댓글(상세 아래): 100번은 D-02 예시 3개, 99번은 이어 받기 확인용 25개
+//   ?mock=comments-loading | comments-error | comments-more-error | comment-error | comment-delete-error
+//   ?viewer=member(내 댓글 = 지은) | restricted(쓰기·고치기·지우기 거절) | 없으면 비회원
 // 내 게시글(/mypage/posts): ?mock=loading | empty | error | more-error | private-error, ?viewer=restricted(버튼 비활성)
 //   공개 = 도쿄 예시(100), 비공개 = 부산 겨울 바다(여행 2 → [공개 전환]하면 예전 제목이 들어 있음), 관리자 비공개 = 제주 맛집 지도
 // 좋아요·북마크를 누른 결과는 이 파일에만 남는다. 새로고침하면 처음으로 돌아간다.
@@ -34,6 +37,7 @@ import {
   type CityOption,
   BOOKMARK_PAGE_SIZE,
   type BookmarkResult,
+  type CommentItem,
   type LikeResult,
   type MyBookmarkItem,
   type MyPostItem,
@@ -504,4 +508,111 @@ export async function mockGetMyPosts(after: number | undefined, page: number): P
     totalPages: Math.ceil(all.length / MY_POSTS_PAGE_SIZE),
     hasNext: start + MY_POSTS_PAGE_SIZE < all.length,
   }
+}
+
+// ---- PUB-08 공개 댓글 ----
+
+interface MockComment {
+  commentId: number
+  postId: number
+  authorId: number
+  nickname: string
+  content: string
+  createdAt: string
+  edited: boolean
+}
+
+const ME_ID = 1 // 지은 (?viewer=member·mine·liked일 때 나)
+let nextCommentId = 5000
+let lastWrittenAt = 0 // 10초 제한 흉내
+
+const mockComments: MockComment[] = [
+  // D-02 예시
+  { commentId: 1, postId: 100, authorId: 2, nickname: '민수', content: '저도 이 코스로 다녀왔어요! 스카이트리는 해 질 때 추천해요.', createdAt: '2026-10-28T19:00:00', edited: false },
+  { commentId: 2, postId: 100, authorId: 3, nickname: '하늘', content: '카페 A 웨이팅은 얼마나 됐나요?', createdAt: '2026-11-27T09:10:00', edited: false },
+  { commentId: 3, postId: 100, authorId: ME_ID, nickname: '지은', content: '30분 정도 기다렸어요.', createdAt: '2026-11-27T14:05:00', edited: true },
+  // 이어 받기 확인용 (99번 게시물 25개, 4·5번째는 HTML 글자 그대로·줄바꿈 확인)
+  ...Array.from({ length: 25 }, (_, i) => ({
+    commentId: 100 + i,
+    postId: 99,
+    authorId: i % 4 === 0 ? ME_ID : 2,
+    nickname: i % 4 === 0 ? '지은' : '민수',
+    content: i === 3 ? '<b>굵게?</b> <script>alert(1)</script>' : i === 4 ? '첫 줄\n둘째 줄' : `댓글 ${i + 1}`,
+    createdAt: `2026-11-${String(1 + Math.floor(i / 2)).padStart(2, '0')}T${i % 2 === 0 ? '10' : '15'}:00:00`,
+    edited: false,
+  })),
+]
+
+function commentViewerId(): number | null {
+  const v = currentViewer()
+  return v.loggedIn ? ME_ID : null
+}
+
+function toCommentItem(c: MockComment): CommentItem {
+  return {
+    commentId: c.commentId,
+    content: c.content,
+    authorNickname: c.nickname,
+    createdAt: c.createdAt,
+    edited: c.edited,
+    mine: commentViewerId() === c.authorId,
+  }
+}
+
+export async function mockGetComments(postId: number, after: number | undefined, page: number): Promise<PageResponse<CommentItem>> {
+  const mode = mockMode()
+  await wait(mode === 'comments-loading' ? 600_000 : 400)
+  if (mode === 'comments-error' || (mode === 'comments-more-error' && after !== undefined)) throw new Error('mock error')
+  if (!visiblePost(postId)) throw notVisible()
+  const all = mockComments.filter((c) => c.postId === postId)
+  const start = after === undefined ? 0 : all.findIndex((c) => c.commentId === after) + 1
+  return {
+    content: all.slice(start, start + COMMENT_PAGE).map(toCommentItem),
+    page,
+    size: COMMENT_PAGE,
+    totalElements: all.length,
+    totalPages: Math.ceil(all.length / COMMENT_PAGE),
+    hasNext: start + COMMENT_PAGE < all.length,
+  }
+}
+const COMMENT_PAGE = 20
+
+function rejectRestricted(code: string, message: string) {
+  if (new URLSearchParams(window.location.search).get('viewer') === 'restricted') throw new ApiError(403, code, [], message)
+}
+
+export async function mockWriteComment(postId: number, content: string): Promise<CommentItem> {
+  await wait(500)
+  rejectRestricted('COMMENT_RESTRICTED', '이용 제한 중에는 댓글을 쓸 수 없어요.')
+  if (mockMode() === 'comment-error') throw new Error('mock error')
+  if (!visiblePost(postId)) throw notVisible()
+  if (Date.now() - lastWrittenAt < 10_000) throw new ApiError(429, 'COMMENT_TOO_FAST', [], '잠시 후 다시 등록해 주세요.')
+  lastWrittenAt = Date.now()
+  const c: MockComment = {
+    commentId: nextCommentId++, postId, authorId: ME_ID, nickname: '지은', content: content.trim(),
+    createdAt: '2026-11-27T15:30:00', edited: false,
+  }
+  mockComments.push(c)
+  return toCommentItem(c)
+}
+
+export async function mockEditComment(commentId: number, content: string): Promise<CommentItem> {
+  await wait(500)
+  rejectRestricted('COMMENT_EDIT_RESTRICTED', '이용 제한 중에는 댓글을 고칠 수 없어요.')
+  if (mockMode() === 'comment-error') throw new Error('mock error')
+  const c = mockComments.find((x) => x.commentId === commentId)
+  if (!c) throw new ApiError(404, 'RESOURCE_NOT_ACCESSIBLE', [], '이미 삭제되었거나 볼 수 없는 내용이에요.')
+  if (c.authorId !== commentViewerId()) throw new ApiError(403, 'COMMENT_EDIT_FORBIDDEN', [], '내가 쓴 댓글만 고칠 수 있어요.')
+  Object.assign(c, { content: content.trim(), edited: true })
+  return toCommentItem(c)
+}
+
+export async function mockDeleteComment(commentId: number): Promise<void> {
+  await wait(500)
+  rejectRestricted('COMMUNITY_FEATURE_RESTRICTED', '이용 제한 중에는 커뮤니티 기능을 쓸 수 없어요.')
+  if (mockMode() === 'comment-delete-error') throw new Error('mock error')
+  const index = mockComments.findIndex((x) => x.commentId === commentId)
+  if (index < 0) throw new ApiError(404, 'RESOURCE_NOT_ACCESSIBLE', [], '이미 삭제되었거나 볼 수 없는 내용이에요.')
+  if (mockComments[index].authorId !== commentViewerId()) throw new ApiError(403, 'COMMENT_DELETE_FORBIDDEN', [], '내가 쓴 댓글만 지울 수 있어요.')
+  mockComments.splice(index, 1)
 }
