@@ -8,8 +8,8 @@ info:
     응답·에러·날짜 형식은 `contracts/common.yaml`을 따른다.
     - 지금 있는 API: PUB-01 공유하기·미리보기·게시, PUB-02-02 비공개 전환, PUB-02-05 제목·소개 수정,
       PUB-03 공개 여행 목록·검색·정렬, PUB-04 공개 여행 상세, PUB-05 좋아요·취소, PUB-06 북마크·내 북마크
-    - PUB-02-04 내 게시글도 있다.
-    - 다른 기능(PUB-07~09 복제·댓글·신고)은 만들 때 이 파일에 더한다.
+    - PUB-02-04 내 게시글, PUB-08 댓글도 있다.
+    - 다른 기능(PUB-07·09 복제·신고)은 만들 때 이 파일에 더한다.
     - 게시물 사진(POST_IMAGE_URL)은 형식·크기·저장 위치가 정해지지 않아 아직 받지 않는다(항상 null → 기본 배경).
     - 좋아요·북마크·내 북마크는 로그인이 필요하다(기본 규칙 그대로, A에 따로 요청할 것 없음).
 
@@ -17,6 +17,7 @@ info:
     아래 두 주소는 비회원도 부른다(PUB-03-01·04-01 "로그인 없이 가능").
     - `GET /api/community/posts`
     - `GET /api/community/posts/{postId}`
+    - `GET /api/community/posts/{postId}/comments` (PUB-08-02 댓글 목록)
     로그인한 회원이 부르면 상세의 `viewer`에 내 게시물·좋아요·북마크 여부를 채운다.
 
     ## 공개 게시물로 보이는 조건 (PUB-03-01·04-01, 목록·상세 같음)
@@ -36,6 +37,11 @@ info:
     | POST_ALREADY_PUBLIC | 409 | 이미 공개한 여행이에요. | PUB-01-03 |
     | POST_TRIP_TRASHED | 409 | 휴지통에 있는 여행은 게시할 수 없어요. | PUB-01-02·03 |
     | POST_ADMIN_HIDDEN | 403 | 관리자가 비공개로 바꾼 게시물이라 다시 공유할 수 없어요. | PUB-01-03, PUB-02-03 |
+    | COMMENT_RESTRICTED | 403 | 이용 제한 중에는 댓글을 쓸 수 없어요. | PUB-08-01 |
+    | COMMENT_EDIT_RESTRICTED | 403 | 이용 제한 중에는 댓글을 고칠 수 없어요. | PUB-08-03 |
+    | COMMENT_TOO_FAST | 429 | 잠시 후 다시 등록해 주세요. (Retry-After 헤더에 남은 초) | PUB-08-01 |
+    | COMMENT_EDIT_FORBIDDEN | 403 | 내가 쓴 댓글만 고칠 수 있어요. | PUB-08-03 |
+    | COMMENT_DELETE_FORBIDDEN | 403 | 내가 쓴 댓글만 지울 수 있어요. | PUB-08-04 |
 
 servers:
   - url: http://localhost:8080
@@ -627,6 +633,170 @@ paths:
         '401':
           $ref: './common.yaml#/components/responses/Unauthorized'
 
+  /api/community/posts/{postId}/comments:
+    parameters:
+      - name: postId
+        in: path
+        required: true
+        schema:
+          $ref: './common.yaml#/components/schemas/Id'
+    get:
+      tags: [community]
+      operationId: getComments
+      summary: "PUB-08-02 공개 댓글 목록"
+      description: |
+        작성 시각 오래된 순 20개. 다음 20개는 마지막 댓글의 commentId를 `after`로 보낸다(이 게시물 댓글이 아니거나 없으면 400 INVALID_INPUT).
+        볼 수 없는 게시물이면 404 PUBLIC_POST_NOT_VISIBLE(댓글도 보이지 않음). 관리자가 지운 댓글은 누구에게도 보이지 않는다.
+        로그인 회원이면 본인 댓글에 mine = true([···] [수정] [삭제]).
+        권한: 모든 사용자(비회원 포함) — 로그인 없이 열 주소(A에 요청).
+      parameters:
+        - name: after
+          in: query
+          required: false
+          schema:
+            $ref: './common.yaml#/components/schemas/Id'
+        - name: page
+          in: query
+          required: false
+          description: "몇 번째 요청인지(0부터). 서버는 응답 page에 그대로 돌려준다"
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+      responses:
+        '200':
+          description: "댓글 (한 번에 20개, totalElements는 이 게시물 댓글 수)"
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: './common.yaml#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        allOf:
+                          - $ref: './common.yaml#/components/schemas/PageResponse'
+                          - type: object
+                            properties:
+                              content:
+                                type: array
+                                maxItems: 20
+                                items:
+                                  $ref: '#/components/schemas/CommentResponse'
+        '400':
+          $ref: './common.yaml#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/PostNotVisible'
+    post:
+      tags: [community]
+      operationId: writeComment
+      summary: "PUB-08-01 공개 댓글 작성"
+      description: |
+        공개 게시물에만. 내용 규칙은 CommentRequest. 같은 회원은 10초에 1개(429 COMMENT_TOO_FAST, Retry-After 헤더에 남은 초).
+        성공하면 게시물 작성자에게 새 댓글 알림(PUB-08-05, 본인 게시물에 본인 댓글이면 없음, 알림 저장 실패는 댓글에 영향 없음).
+        TODO(A에 요청): 알림 저장(NotificationService)·작성자 닉네임은 A 함수가 생기면 연결한다.
+        권한: 로그인한 정상 회원(이용 제한 COMMENT_RESTRICTED 403).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CommentRequest'
+      responses:
+        '200':
+          description: "등록된 댓글 (목록 맨 아래에 추가)"
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: './common.yaml#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/CommentResponse'
+        '400':
+          $ref: './common.yaml#/components/responses/BadRequest'
+        '401':
+          $ref: './common.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common.yaml#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/PostNotVisible'
+        '429':
+          description: "10초 안에 다시 등록 (COMMENT_TOO_FAST)"
+          headers:
+            Retry-After:
+              description: "다시 등록할 수 있을 때까지 남은 초"
+              schema:
+                type: integer
+          content:
+            application/json:
+              schema:
+                $ref: './common.yaml#/components/schemas/ErrorResponse'
+
+  /api/community/comments/{commentId}:
+    parameters:
+      - name: commentId
+        in: path
+        required: true
+        schema:
+          $ref: './common.yaml#/components/schemas/Id'
+    put:
+      tags: [community]
+      operationId: editComment
+      summary: "PUB-08-03 본인 댓글 수정"
+      description: |
+        본인 댓글만(아니면 COMMENT_EDIT_FORBIDDEN 403). 볼 수 없는 게시물의 댓글은 404 PUBLIC_POST_NOT_VISIBLE.
+        이미 지워진 댓글이면 404 RESOURCE_NOT_ACCESSIBLE. 고치면 edited = true("수정됨").
+        권한: 로그인한 정상 회원(이용 제한 COMMENT_EDIT_RESTRICTED 403).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CommentRequest'
+      responses:
+        '200':
+          description: "고친 댓글"
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: './common.yaml#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/CommentResponse'
+        '400':
+          $ref: './common.yaml#/components/responses/BadRequest'
+        '401':
+          $ref: './common.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common.yaml#/components/responses/Forbidden'
+        '404':
+          $ref: './common.yaml#/components/responses/NotFound'
+    delete:
+      tags: [community]
+      operationId: deleteComment
+      summary: "PUB-08-04 본인 댓글 삭제"
+      description: |
+        본인 댓글만(게시물 작성자도 남의 댓글은 불가, COMMENT_DELETE_FORBIDDEN 403). 되돌릴 수 없다. 응답 data는 null.
+        게시물이 지금 보이는지는 따지지 않는다. 이미 지워졌으면 404 RESOURCE_NOT_ACCESSIBLE.
+        권한: 로그인한 정상 회원(이용 제한 COMMUNITY_FEATURE_RESTRICTED 403).
+      responses:
+        '200':
+          description: "삭제됨 (data null)"
+          content:
+            application/json:
+              schema:
+                $ref: './common.yaml#/components/schemas/ApiResponse'
+        '401':
+          $ref: './common.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common.yaml#/components/responses/Forbidden'
+        '404':
+          $ref: './common.yaml#/components/responses/NotFound'
+
   /api/community/posts/{postId}/info:
     put:
       tags: [community]
@@ -1040,3 +1210,35 @@ components:
         communityWritable:
           type: boolean
           description: "이용 제한 회원이면 false → [비공개 전환]·[공개 전환] 비활성"
+
+    CommentRequest:
+      type: object
+      description: |
+        PUB-08-01·03 댓글 입력값. 1~500자(이모지 1글자), 줄바꿈 허용, 다른 제어문자는 공백 1칸으로, 앞뒤 공백 제거.
+        비거나 500자를 넘으면 INVALID_INPUT(화면에서 막는 값). HTML·스크립트는 글자 그대로 저장한다.
+      required: [content]
+      properties:
+        content:
+          type: string
+          maxLength: 500
+
+    CommentResponse:
+      type: object
+      description: "PUB-08-02 댓글 한 개: 닉네임 · 내용 · 작성 시각(오른쪽 끝), 고쳤으면 시각 아래 \"수정됨\""
+      required: [commentId, content, authorNickname, createdAt, edited, mine]
+      properties:
+        commentId:
+          $ref: './common.yaml#/components/schemas/Id'
+        content:
+          type: string
+          description: "글자 그대로 (화면도 글자로만 표시, 링크 자동 실행 안 함)"
+        authorNickname:
+          type: [string, 'null']
+          description: "TODO(A에 요청): 지금은 null"
+        createdAt:
+          $ref: './common.yaml#/components/schemas/LocalDateTime'
+        edited:
+          type: boolean
+        mine:
+          type: boolean
+          description: "로그인 회원 본인 댓글이면 true → [···] [수정] [삭제]"

@@ -16,9 +16,11 @@ import lombok.NoArgsConstructor;
 
 import org.hibernate.type.YesNoConverter;
 
+import com.planmate.common.util.DateTimeUtil;
+
 /**
- * POST_COMMENT (공개 댓글). schema.sql 그대로 전체 칼럼. 게시물이 지워지면 DB가 함께 지운다.
- * 지금은 PUB-02-04 내 게시글의 댓글 수를 세는 데만 쓴다. 작성·수정·삭제 메서드는 PUB-08에서 추가한다.
+ * POST_COMMENT (공개 댓글, PUB-08). schema.sql 그대로 전체 칼럼. 게시물이 지워지면 DB가 함께 지운다.
+ * 대댓글·멘션 없음. 내용은 글자 그대로 저장하고 화면도 글자로만 보여 준다(HTML 실행 안 함).
  */
 @Entity
 @Table(name = "POST_COMMENT")
@@ -50,4 +52,21 @@ public class PostComment {
     @Convert(converter = YesNoConverter.class)
     @Column(name = "IS_EDITED", nullable = false, length = 1)
     private Boolean isEdited;
+
+    /** PUB-08-01 댓글 작성 (처음엔 수정 안 됨) */
+    public static PostComment write(Long postId, Long authorId, String content) {
+        PostComment comment = new PostComment();
+        comment.postId = postId;
+        comment.authorId = authorId;
+        comment.content = content;
+        comment.createdAt = DateTimeUtil.now();
+        comment.isEdited = false;
+        return comment;
+    }
+
+    /** PUB-08-03 내용 수정 → "수정됨" */
+    public void edit(String content) {
+        this.content = content;
+        this.isEdited = true;
+    }
 }
