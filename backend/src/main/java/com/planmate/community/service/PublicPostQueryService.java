@@ -43,7 +43,6 @@ public class PublicPostQueryService {
 
     private final PublicPostRepository publicPostRepository;
     private final AccountStatusChecker accountStatusChecker;
-    // TODO(B에 요청): TripStatusReader 구현(TRIP.STATUS 조회). 없으면 목록·상세를 부를 때 오류를 낸다(TripAccessChecker와 같음).
     private final ObjectProvider<TripStatusReader> tripStatusReaderProvider;
     private final PostLikeRepository postLikeRepository;
     private final PostBookmarkRepository postBookmarkRepository;
