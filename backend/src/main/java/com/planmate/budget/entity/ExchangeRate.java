@@ -10,6 +10,9 @@ import jakarta.persistence.Id;
 import jakarta.persistence.IdClass;
 import jakarta.persistence.Table;
 
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
+
 import lombok.AccessLevel;
 import lombok.EqualsAndHashCode;
 import lombok.Getter;
@@ -27,7 +30,9 @@ import lombok.NoArgsConstructor;
 public class ExchangeRate {
 
 	@Id
-	@Column(name = "CURRENCY", nullable = false)
+	// BUD-04-01 통화 코드 3자리. DB가 CHAR(3)이라 CHAR로 표시 (없으면 ddl-auto=validate에서 VARCHAR로 보고 맞지 않음)
+	@JdbcTypeCode(SqlTypes.CHAR)
+	@Column(name = "CURRENCY", nullable = false, length = 3)
 	private String currency;
 
 	@Id

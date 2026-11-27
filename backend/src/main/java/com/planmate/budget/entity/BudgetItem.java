@@ -12,6 +12,9 @@ import jakarta.persistence.Id;
 import jakarta.persistence.SequenceGenerator;
 import jakarta.persistence.Table;
 
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
+
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -68,7 +71,9 @@ public class BudgetItem {
 	@Column(name = "AMOUNT")
 	private BigDecimal amount;
 
-	@Column(name = "CURRENCY", nullable = false)
+	// BUD-01-02 통화 코드 3자리. DB가 CHAR(3)이라 CHAR로 표시 (없으면 ddl-auto=validate에서 VARCHAR로 보고 맞지 않음)
+	@JdbcTypeCode(SqlTypes.CHAR)
+	@Column(name = "CURRENCY", nullable = false, length = 3)
 	private String currency;
 
 	@Enumerated(EnumType.STRING)
