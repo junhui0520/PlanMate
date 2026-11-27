@@ -86,6 +86,8 @@ public enum ErrorCode {
     COMMENT_DELETE_FORBIDDEN(HttpStatus.FORBIDDEN, "내가 쓴 댓글만 지울 수 있어요."),
     // PUB-07-01·02 내 여행으로 복제: 이용 제한 회원
     CLONE_RESTRICTED(HttpStatus.FORBIDDEN, "이용 제한 중에는 복제할 수 없어요."),
+    // PUB-09-01 같은 회원이 같은 대상을 처리 전에 다시 신고
+    REPORT_DUPLICATE(HttpStatus.CONFLICT, "이미 접수된 신고예요."),
 
     ;
 
