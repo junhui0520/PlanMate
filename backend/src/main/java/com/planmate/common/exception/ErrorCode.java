@@ -78,6 +78,12 @@ public enum ErrorCode {
     POST_TRIP_TRASHED(HttpStatus.CONFLICT, "휴지통에 있는 여행은 게시할 수 없어요."),
     // PUB-02-03 관리자가 비공개로 바꾼 게시물은 소유자가 다시 공유할 수 없음
     POST_ADMIN_HIDDEN(HttpStatus.FORBIDDEN, "관리자가 비공개로 바꾼 게시물이라 다시 공유할 수 없어요."),
+    // PUB-08-01·03·04 공개 댓글
+    COMMENT_RESTRICTED(HttpStatus.FORBIDDEN, "이용 제한 중에는 댓글을 쓸 수 없어요."),
+    COMMENT_EDIT_RESTRICTED(HttpStatus.FORBIDDEN, "이용 제한 중에는 댓글을 고칠 수 없어요."),
+    COMMENT_TOO_FAST(HttpStatus.TOO_MANY_REQUESTS, "잠시 후 다시 등록해 주세요."),
+    COMMENT_EDIT_FORBIDDEN(HttpStatus.FORBIDDEN, "내가 쓴 댓글만 고칠 수 있어요."),
+    COMMENT_DELETE_FORBIDDEN(HttpStatus.FORBIDDEN, "내가 쓴 댓글만 지울 수 있어요."),
 
     ;
 
