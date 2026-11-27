@@ -22,6 +22,8 @@ public class WebConfig {
         config.setAllowedOrigins(List.of(frontendUrl));
         config.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
         config.setAllowedHeaders(List.of("*"));
+        // 화면이 요청 제한 남은 시간을 읽을 수 있게 (ACC-01-02 Retry-After)
+        config.setExposedHeaders(List.of("Retry-After"));
         config.setAllowCredentials(true);
         config.setMaxAge(3600L);
 

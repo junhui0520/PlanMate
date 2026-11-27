@@ -18,6 +18,7 @@ import org.springframework.web.bind.annotation.RestController;
 import java.time.Duration;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.hamcrest.Matchers.containsString;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -99,6 +100,15 @@ class SecurityConfigTest {
                         .header("Origin", "http://evil.example.com")
                         .header("Access-Control-Request-Method", "POST"))
                 .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void 프론트_주소의_실제_요청_응답은_Retry_After를_화면에_노출한다() throws Exception {
+        // ACC-01-02 요청 제한 남은 시간을 화면이 읽을 수 있어야 한다
+        mockMvc.perform(get("/api/auth/ping").header("Origin", FRONTEND))
+                .andExpect(status().isOk())
+                .andExpect(header().string("Access-Control-Allow-Origin", FRONTEND))
+                .andExpect(header().string("Access-Control-Expose-Headers", containsString("Retry-After")));
     }
 
     // MockMvc 환경에서는 XSRF-TOKEN 쿠키가 응답에 담기지 않아 bootRun curl로 확인함 (2026-11-26)
