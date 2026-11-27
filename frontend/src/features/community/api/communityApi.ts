@@ -8,6 +8,7 @@ import {
   mockBookmarkPost,
   mockGetCityOptions,
   mockGetMyBookmarks,
+  mockGetMyPosts,
   mockGetPostPreview,
   mockGetPublicPostDetail,
   mockGetPublicPosts,
@@ -242,6 +243,26 @@ export function updatePostInfo(postId: number, req: PostInfoRequest): Promise<Po
 /** PUB-02-02 비공개 전환: PATCH /api/community/posts/{postId}/private */
 export function makePostPrivate(postId: number): Promise<void> {
   return mockMakePostPrivate(postId)
+}
+
+// PUB-02-04 내 게시글 카드 한 개. 상태: PUBLIC "공개" / PRIVATE "비공개" / ADMIN_HIDDEN "관리자 비공개"
+export interface MyPostItem {
+  postId: number
+  tripId: number // [공개 전환] → 그 여행의 공유하기 흐름
+  title: string
+  status: Exclude<ShareState, 'NONE'>
+  publishedAt: string
+  updatedAt: string | null
+  likeCount: number
+  commentCount: number
+  communityWritable: boolean // false(이용 제한 회원) → 버튼 비활성
+}
+
+export const MY_POST_PAGE_SIZE = 10 // PUB-02-04 10개씩
+
+/** PUB-02-04 내 게시글: GET /api/community/my-posts (게시·수정 시각 최신순) */
+export function getMyPosts(after?: number, page = 0): Promise<PageResponse<MyPostItem>> {
+  return mockGetMyPosts(after, page)
 }
 
 /** 실패 안내 문구: 서버가 보낸 규칙 위반 문구(볼 수 없는 게시물·이용 제한·200개 초과 등)가 있으면 그 문구, 없으면 기능의 실패 문구 */

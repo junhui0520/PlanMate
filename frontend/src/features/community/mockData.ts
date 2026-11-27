@@ -24,6 +24,8 @@
 //   ?mock=publish-error | already-public     (게시 실패 / 그사이 이미 공개)
 //
 // 내 북마크(/mypage/bookmarks): ?mock=loading | empty | error | more-error
+// 내 게시글(/mypage/posts): ?mock=loading | empty | error | more-error | private-error, ?viewer=restricted(버튼 비활성)
+//   공개 = 도쿄 예시(100), 비공개 = 부산 겨울 바다(여행 2 → [공개 전환]하면 예전 제목이 들어 있음), 관리자 비공개 = 제주 맛집 지도
 // 좋아요·북마크를 누른 결과는 이 파일에만 남는다. 새로고침하면 처음으로 돌아간다.
 import { ApiError, type PageResponse } from '../../shared/api/client'
 import {
@@ -34,6 +36,7 @@ import {
   type BookmarkResult,
   type LikeResult,
   type MyBookmarkItem,
+  type MyPostItem,
   type PostDetail,
   type PostInfoRequest,
   type PostListItem,
@@ -49,6 +52,7 @@ interface MockPost extends PostListItem {
   cityId: number
   intro: string | null
   hidden?: boolean // 비공개로 바꿈(PUB-02-02) → 목록·상세·북마크에서 볼 수 없음
+  adminHidden?: boolean // 관리자 비공개 (hidden도 true)
 }
 
 // 공개 게시물로 보이는 것만 (비공개로 바꾼 게시물 제외)
@@ -369,7 +373,8 @@ function shareOf(tripId: number): { post: MockPost | undefined; adminHidden: boo
     if (post) post.hidden = param !== 'public'
   }
   const postId = sharedPosts.get(tripId)
-  return { post: mockPosts.find((p) => p.postId === postId), adminHidden: param === 'admin' }
+  const post = mockPosts.find((p) => p.postId === postId)
+  return { post, adminHidden: param === 'admin' || Boolean(post?.adminHidden) }
 }
 
 function rejectIfNotAllowed() {
@@ -443,4 +448,60 @@ export async function mockMakePostPrivate(postId: number): Promise<void> {
   const post = mockPosts.find((p) => p.postId === postId)
   if (!post) throw notVisible()
   post.hidden = true
+}
+
+// ---- PUB-02-04 내 게시글 ----
+
+// D-10 예시: 비공개로 바꾼 게시물·관리자 비공개 게시물 (공개 목록에는 안 보임)
+mockPosts.push(
+  { postId: 901, cityId: 3, cityName: '부산', days: 2, title: '부산 겨울 바다 1박 2일', intro: '광안리 야경 위주예요.',
+    imageUrl: null, authorNickname: '지은', likeCount: 12, publishedAt: '2026-10-20T10:00:00', updatedAt: '2026-10-28T09:00:00', hidden: true },
+  { postId: 902, cityId: 5, cityName: '제주', days: 3, title: '제주 맛집 지도', intro: null,
+    imageUrl: null, authorNickname: '지은', likeCount: 12, publishedAt: '2026-10-20T09:00:00', updatedAt: '2026-10-28T08:00:00',
+    hidden: true, adminHidden: true },
+)
+sharedPosts.set(2, 901) // 여행 2 = 비공개로 바꾼 부산 게시물
+sharedPosts.set(3, 902) // 여행 3 = 관리자 비공개 제주 게시물
+
+// 내 게시물: 도쿄(100) + 부산(901) + 제주(902) + 이어 받기 확인용 10개
+const MY_POSTS: Array<{ postId: number; tripId: number; comments: number }> = [
+  { postId: 100, tripId: 1, comments: 3 },
+  { postId: 901, tripId: 2, comments: 3 },
+  { postId: 902, tripId: 3, comments: 3 },
+  ...Array.from({ length: 10 }, (_, i) => ({ postId: 94 - i, tripId: 1094 - i, comments: i % 3 })),
+]
+const MY_POSTS_PAGE_SIZE = 10
+
+export async function mockGetMyPosts(after: number | undefined, page: number): Promise<PageResponse<MyPostItem>> {
+  const mode = mockMode()
+  await wait(mode === 'loading' ? 600_000 : 500)
+  if (mode === 'error' || (mode === 'more-error' && after !== undefined)) throw new Error('mock error')
+  const writable = currentViewer().communityWritable || !new URLSearchParams(window.location.search).has('viewer')
+  const all = mode === 'empty' ? [] : [...myPostIds].filter((id) => !MY_POSTS.some((m) => m.postId === id))
+    .map((postId) => ({ postId, tripId: [...sharedPosts].find(([, p]) => p === postId)?.[0] ?? 1, comments: 0 }))
+    .concat(MY_POSTS)
+  const start = after === undefined ? 0 : all.findIndex((m) => m.postId === after) + 1
+  const content: MyPostItem[] = all.slice(start, start + MY_POSTS_PAGE_SIZE).flatMap((m) => {
+    const p = mockPosts.find((x) => x.postId === m.postId)
+    if (!p) return []
+    return [{
+      postId: p.postId,
+      tripId: m.tripId,
+      title: p.title,
+      status: p.adminHidden ? 'ADMIN_HIDDEN' : p.hidden ? 'PRIVATE' : 'PUBLIC',
+      publishedAt: p.publishedAt,
+      updatedAt: p.updatedAt,
+      likeCount: p.likeCount,
+      commentCount: m.comments,
+      communityWritable: writable,
+    }]
+  })
+  return {
+    content,
+    page,
+    size: MY_POSTS_PAGE_SIZE,
+    totalElements: all.length,
+    totalPages: Math.ceil(all.length / MY_POSTS_PAGE_SIZE),
+    hasNext: start + MY_POSTS_PAGE_SIZE < all.length,
+  }
 }

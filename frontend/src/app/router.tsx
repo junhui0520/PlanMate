@@ -14,6 +14,7 @@ import { createBrowserRouter, Navigate } from 'react-router';
 import { RouterProvider } from 'react-router/dom';
 import CommunityListPage from '../features/community/pages/CommunityListPage';
 import MyBookmarksPage from '../features/community/pages/MyBookmarksPage';
+import MyPostsPage from '../features/community/pages/MyPostsPage';
 import PostCreatePage from '../features/community/pages/PostCreatePage';
 import PostDetailPage from '../features/community/pages/PostDetailPage';
 import { EmptyState } from '../shared/components/EmptyState';
@@ -62,7 +63,7 @@ const router = createBrowserRouter([
           { path: 'withdrawal', element: <RoutePlaceholder screen="A-09" title="회원 탈퇴" pageFile="member/pages/WithdrawalPage.tsx" part="A" /> },
           { path: 'saved-places', element: <RoutePlaceholder screen="E-01" title="내 보관함" pageFile="savedplace/pages/SavedPlacePage.tsx" part="A(원래 E)" /> },
           { path: 'bookmarks', element: <MyBookmarksPage /> },
-          { path: 'posts', element: <RoutePlaceholder screen="D-10" title="내 게시글" pageFile="community/pages/MyPostsPage.tsx" part="D" /> },
+          { path: 'posts', element: <MyPostsPage /> },
         ],
       },
       {

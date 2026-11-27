@@ -1,0 +1,79 @@
+/* PUB-02-04 내 게시글 (와이어프레임 D-10). 값은 shared/styles/variables.css */
+.my-posts-page {
+  max-width: 920px;
+  padding: var(--space-7) var(--space-8);
+}
+
+.my-posts-page__title {
+  margin: 0 0 var(--space-4);
+  font-size: var(--font-size-xxl);
+  font-weight: var(--font-weight-bold);
+}
+
+/* 카드 한 줄에 하나 */
+.my-posts-list,
+.my-posts-skeleton .pm-skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.my-posts-skeleton .pm-skeleton--card > span {
+  height: 78px;
+}
+
+.my-posts-skeleton--more {
+  margin-top: var(--space-3);
+}
+
+.my-posts-sentinel {
+  height: 1px;
+}
+
+.my-post {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding: var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-bg);
+}
+
+.my-post:hover {
+  border-color: var(--color-border-strong);
+}
+
+.my-post__body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+  color: var(--color-text);
+  text-decoration: none;
+}
+
+.my-post__title {
+  margin: 0;
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-bold);
+}
+
+/* 제목 오른쪽 작은 글씨 상태 (색 구분 없음) */
+.my-post__status {
+  margin-left: var(--space-2);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-regular);
+  color: var(--color-text-sub);
+}
+
+.my-post__meta {
+  margin: 0;
+  font-size: var(--font-size-xs);
+  color: var(--color-text-disabled);
+}
