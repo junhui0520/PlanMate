@@ -1,4 +1,4 @@
-// 커뮤니티 서버 호출 (PUB-01 공유·게시, PUB-02 내 게시물, PUB-03 목록, PUB-04 상세, PUB-05 좋아요, PUB-06 북마크, PUB-07 복제, PUB-08 댓글). 약속: contracts/community.yaml
+// 커뮤니티 서버 호출 (PUB-01 공유·게시, PUB-02 내 게시물, PUB-03 목록, PUB-04 상세, PUB-05 좋아요, PUB-06 북마크, PUB-07 복제, PUB-08 댓글, PUB-09 신고). 약속: contracts/community.yaml
 // 지금은 가짜 데이터(mockData.ts)를 돌려준다. 화면 파일은 이 파일의 함수만 부른다.
 // TODO(D): 서버 API가 생기고 A가 로그인 없이 열어 주면
 //          1) 각 함수 안쪽을 shared/api/client.ts 호출로 바꾸고
@@ -21,6 +21,8 @@ import {
   mockLikePost,
   mockMakePostPrivate,
   mockPublishPost,
+  mockReportComment,
+  mockReportPost,
   mockUpdatePostInfo,
   mockWriteComment,
   mockUnbookmarkPost,
@@ -331,6 +333,28 @@ export function checkClonable(postId: number): Promise<CloneCheck> {
 /** PUB-07-02 복제 실행: POST /api/community/posts/{postId}/clone → 새 여행 ID */
 export function cloneToMyTrip(postId: number, req: CloneRequest): Promise<{ tripId: number }> {
   return mockCloneToMyTrip(postId, req)
+}
+
+// ---- PUB-09-01 신고 접수 (로그인 필요) ----
+
+// 사유: 스팸·광고 / 욕설·괴롭힘 / 개인정보 노출 / 부적절한 닉네임 / 기타(직접 입력)
+export type ReportReason = 'SPAM' | 'ABUSE' | 'PRIVACY' | 'NICKNAME' | 'ETC'
+
+export interface ReportRequest {
+  reason: ReportReason
+  detail: string | null // 기타일 때만 1~300자
+}
+
+export const REPORT_DETAIL_MAX = 300
+
+/** PUB-09-01 게시물 신고: POST /api/community/posts/{postId}/reports */
+export function reportPost(postId: number, req: ReportRequest): Promise<{ reportId: number }> {
+  return mockReportPost(postId, req)
+}
+
+/** PUB-09-01 댓글 신고: POST /api/community/comments/{commentId}/reports */
+export function reportComment(commentId: number, req: ReportRequest): Promise<{ reportId: number }> {
+  return mockReportComment(commentId, req)
 }
 
 /** 실패 안내 문구: 서버가 보낸 규칙 위반 문구(볼 수 없는 게시물·이용 제한·200개 초과 등)가 있으면 그 문구, 없으면 기능의 실패 문구 */

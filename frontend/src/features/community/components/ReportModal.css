@@ -1,0 +1,43 @@
+/* PUB-09-01 신고 창 (와이어프레임 D-06). 값은 shared/styles/variables.css */
+.report-modal__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--space-4);
+}
+
+.report-modal__title {
+  margin: 0;
+  font-size: var(--font-size-xl);
+  font-weight: var(--font-weight-bold);
+}
+
+.report-modal__close {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--color-text);
+  font-size: var(--font-size-xxl);
+  line-height: 1;
+  cursor: pointer;
+}
+
+.report-modal__reasons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.report-modal__detail {
+  margin-top: var(--space-4);
+}
+
+.report-modal__textarea {
+  height: auto;
+  padding: var(--space-2) var(--space-3);
+  line-height: var(--line-height-base);
+  resize: none;
+  font-family: inherit;
+}

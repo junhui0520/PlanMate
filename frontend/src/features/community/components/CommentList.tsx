@@ -1,7 +1,7 @@
 // PUB-08 공개 댓글 영역 (와이어프레임 D-02 아래): 목록(PUB-08-02) + 입력칸(PUB-08-01) + 본인 댓글 수정·삭제(PUB-08-03·04)
 // - 오래된 순 20개, 아래 끝까지 내리면 다음 20개
 // - 한 줄: 닉네임 · 내용 · 작성 시각(오른쪽 끝), 고쳤으면 시각 아래 "수정됨"(시각과 같은 글자 모양)
-// - 내 댓글은 오른쪽 [···] → [수정] [삭제]
+// - 내 댓글은 오른쪽 [···] → [수정] [삭제], 남의 댓글은 [···] → [신고](로그인 회원, PUB-09-01)
 // - 내용은 글자로만 표시한다(HTML·스크립트 실행 안 함, 링크 자동 실행 안 함)
 // 정한 내용(11/27): 입력칸은 피그마 그림대로 목록 아래.
 import { useCallback, useEffect, useRef, useState } from 'react'
@@ -20,6 +20,7 @@ import {
   type CommentItem,
 } from '../api/communityApi.ts'
 import CommentForm from './CommentForm.tsx'
+import ReportModal from './ReportModal.tsx'
 import './CommentList.css'
 
 type ListState =
@@ -30,8 +31,8 @@ type ListState =
 const LOAD_FAILED = '댓글을 불러오지 못했어요.' // PUB-08-02 실패
 const COMMON_FAILED = '요청을 처리하지 못했어요. 잠시 후 다시 시도해 주세요.' // 수정 실패 문구는 기능정의서에 없어 공통 문구
 
-// 내 댓글 [···] 메뉴: [수정] [삭제]
-function CommentMenu({ onEdit, onDelete }: { onEdit: () => void; onDelete: () => void }) {
+// 댓글 [···] 메뉴: 내 댓글은 [수정] [삭제], 남의 댓글은 [신고]
+function CommentMenu({ items }: { items: Array<{ label: string; onClick: () => void }> }) {
   const [open, setOpen] = useState(false)
   return (
     <div className="comment-menu">
@@ -46,26 +47,19 @@ function CommentMenu({ onEdit, onDelete }: { onEdit: () => void; onDelete: () =>
       </button>
       {open && (
         <div className="comment-menu__list" role="menu">
-          <button
-            type="button"
-            role="menuitem"
-            onClick={() => {
-              setOpen(false)
-              onEdit()
-            }}
-          >
-            수정
-          </button>
-          <button
-            type="button"
-            role="menuitem"
-            onClick={() => {
-              setOpen(false)
-              onDelete()
-            }}
-          >
-            삭제
-          </button>
+          {items.map((item) => (
+            <button
+              key={item.label}
+              type="button"
+              role="menuitem"
+              onClick={() => {
+                setOpen(false)
+                item.onClick()
+              }}
+            >
+              {item.label}
+            </button>
+          ))}
         </div>
       )}
     </div>
@@ -83,6 +77,7 @@ export default function CommentList({ postId, loggedIn }: { postId: number; logg
   const [editingId, setEditingId] = useState<number | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<CommentItem | null>(null)
   const [deleting, setDeleting] = useState(false)
+  const [reportId, setReportId] = useState<number | null>(null) // PUB-09-01 신고할 댓글
   const sentinelRef = useRef<HTMLDivElement>(null)
 
   // 처음 20개
@@ -240,11 +235,15 @@ export default function CommentList({ postId, loggedIn }: { postId: number; logg
                     {c.edited && <span className="comment__edited">수정됨</span>}
                   </span>
                   <span className="comment__menu-slot">
-                    {c.mine && (
+                    {c.mine ? (
                       <CommentMenu
-                        onEdit={() => setEditingId(c.commentId)}
-                        onDelete={() => setDeleteTarget(c)}
+                        items={[
+                          { label: '수정', onClick: () => setEditingId(c.commentId) },
+                          { label: '삭제', onClick: () => setDeleteTarget(c) },
+                        ]}
                       />
+                    ) : (
+                      loggedIn && <CommentMenu items={[{ label: '신고', onClick: () => setReportId(c.commentId) }]} />
                     )}
                   </span>
                 </>
@@ -272,6 +271,8 @@ export default function CommentList({ postId, loggedIn }: { postId: number; logg
           </Button>
         </div>
       )}
+
+      {reportId !== null && <ReportModal target={{ type: 'COMMENT', id: reportId }} onClose={() => setReportId(null)} />}
 
       <ConfirmDialog
         open={deleteTarget !== null}

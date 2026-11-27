@@ -29,6 +29,8 @@
 //   ?viewer=member(내 댓글 = 지은) | restricted(쓰기·고치기·지우기 거절) | 없으면 비회원
 // 복제(상세 [내 여행으로 복제], ?viewer=member):
 //   ?mock=clone-limit (이미 3개) | clone-date (시작일 범위 밖) | clone-error (복제 실패) | restricted 회원은 ?viewer=restricted
+// 신고(상세 [신고]·남의 댓글 [···] > [신고], ?viewer=member):
+//   같은 대상을 두 번 신고하면 "이미 접수된 신고예요." / ?mock=report-error (신고 실패) | report-gone (그사이 지워짐)
 // 내 게시글(/mypage/posts): ?mock=loading | empty | error | more-error | private-error, ?viewer=restricted(버튼 비활성)
 //   공개 = 도쿄 예시(100), 비공개 = 부산 겨울 바다(여행 2 → [공개 전환]하면 예전 제목이 들어 있음), 관리자 비공개 = 제주 맛집 지도
 // 좋아요·북마크를 누른 결과는 이 파일에만 남는다. 새로고침하면 처음으로 돌아간다.
@@ -50,6 +52,7 @@ import {
   type PostListItem,
   type PostPreview,
   type PublishRequest,
+  type ReportRequest,
   type ShareStatus,
   type PostListQuery,
   type PostViewer,
@@ -648,4 +651,29 @@ export async function mockCloneToMyTrip(postId: number, req: CloneRequest): Prom
   const tripId = nextTripId++
   cloneKeys.set(req.requestKey, tripId)
   return { tripId }
+}
+
+// ---- PUB-09-01 신고 접수 ----
+
+const receivedReports = new Set<string>() // 처리 전(접수) 신고: "POST:100" / "COMMENT:2"
+let nextReportId = 700
+
+async function mockReport(key: string, exists: boolean): Promise<{ reportId: number }> {
+  await wait(500)
+  rejectRestricted('COMMUNITY_FEATURE_RESTRICTED', '이용 제한 중에는 커뮤니티 기능을 쓸 수 없어요.')
+  if (mockMode() === 'report-error') throw new Error('mock error')
+  if (!exists || mockMode() === 'report-gone') {
+    throw new ApiError(404, 'RESOURCE_NOT_ACCESSIBLE', [], '이미 삭제되었거나 볼 수 없는 내용이에요.')
+  }
+  if (receivedReports.has(key)) throw new ApiError(409, 'REPORT_DUPLICATE', [], '이미 접수된 신고예요.')
+  receivedReports.add(key)
+  return { reportId: nextReportId++ }
+}
+
+export function mockReportPost(postId: number, _req: ReportRequest): Promise<{ reportId: number }> {
+  return mockReport(`POST:${postId}`, Boolean(visiblePost(postId)))
+}
+
+export function mockReportComment(commentId: number, _req: ReportRequest): Promise<{ reportId: number }> {
+  return mockReport(`COMMENT:${commentId}`, mockComments.some((c) => c.commentId === commentId))
 }

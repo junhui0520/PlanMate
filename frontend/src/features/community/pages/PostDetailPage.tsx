@@ -33,6 +33,7 @@ import LikeButton from '../components/LikeButton.tsx'
 import PostInfoForm from '../components/PostInfoForm.tsx'
 import { hasPostTitle, isPostInfoChanged, toPostInfoRequest, type PostInfo } from '../utils/postInfo.ts'
 import PublicSchedule from '../components/PublicSchedule.tsx'
+import ReportModal from '../components/ReportModal.tsx'
 import './PostDetailPage.css'
 
 type LoadState =
@@ -130,8 +131,6 @@ function PostBody({ post, onChanged }: { post: PostDetail; onChanged: (post: Pos
     }
     action()
   }
-  // TODO(D): 신고(PUB-09-01)는 그 단계에서 붙인다
-  const notYet = () => {}
   const locked = viewer.loggedIn && !viewer.communityWritable // 이용 제한 회원: 버튼 모두 비활성
   const toast = useToast()
 
@@ -173,6 +172,9 @@ function PostBody({ post, onChanged }: { post: PostDetail; onChanged: (post: Pos
       setBookmarkBusy(false)
     }
   }
+
+  // PUB-09-01 신고 창
+  const [reporting, setReporting] = useState(false)
 
   // PUB-07 내 여행으로 복제 창
   const [cloning, setCloning] = useState(false)
@@ -251,7 +253,7 @@ function PostBody({ post, onChanged }: { post: PostDetail; onChanged: (post: Pos
               <Button disabled={locked} onClick={requireLogin(() => setCloning(true))}>
                 내 여행으로 복제
               </Button>
-              <Button variant="secondary" disabled={locked} onClick={requireLogin(notYet)}>
+              <Button variant="secondary" disabled={locked} onClick={requireLogin(() => setReporting(true))}>
                 신고
               </Button>
             </>
@@ -265,6 +267,7 @@ function PostBody({ post, onChanged }: { post: PostDetail; onChanged: (post: Pos
       {/* PUB-08 댓글: 목록·입력칸·본인 댓글 수정·삭제 */}
       <CommentList postId={post.postId} loggedIn={viewer.loggedIn} />
 
+      {reporting && <ReportModal target={{ type: 'POST', id: post.postId }} onClose={() => setReporting(false)} />}
       {cloning && <CloneModal postId={post.postId} days={post.days} onClose={closeClone} />}
 
       {editing && (
