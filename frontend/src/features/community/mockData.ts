@@ -27,6 +27,8 @@
 // 댓글(상세 아래): 100번은 D-02 예시 3개, 99번은 이어 받기 확인용 25개
 //   ?mock=comments-loading | comments-error | comments-more-error | comment-error | comment-delete-error
 //   ?viewer=member(내 댓글 = 지은) | restricted(쓰기·고치기·지우기 거절) | 없으면 비회원
+// 복제(상세 [내 여행으로 복제], ?viewer=member):
+//   ?mock=clone-limit (이미 3개) | clone-date (시작일 범위 밖) | clone-error (복제 실패) | restricted 회원은 ?viewer=restricted
 // 내 게시글(/mypage/posts): ?mock=loading | empty | error | more-error | private-error, ?viewer=restricted(버튼 비활성)
 //   공개 = 도쿄 예시(100), 비공개 = 부산 겨울 바다(여행 2 → [공개 전환]하면 예전 제목이 들어 있음), 관리자 비공개 = 제주 맛집 지도
 // 좋아요·북마크를 누른 결과는 이 파일에만 남는다. 새로고침하면 처음으로 돌아간다.
@@ -37,6 +39,8 @@ import {
   type CityOption,
   BOOKMARK_PAGE_SIZE,
   type BookmarkResult,
+  type CloneCheck,
+  type CloneRequest,
   type CommentItem,
   type LikeResult,
   type MyBookmarkItem,
@@ -615,4 +619,33 @@ export async function mockDeleteComment(commentId: number): Promise<void> {
   if (index < 0) throw new ApiError(404, 'RESOURCE_NOT_ACCESSIBLE', [], '이미 삭제되었거나 볼 수 없는 내용이에요.')
   if (mockComments[index].authorId !== commentViewerId()) throw new ApiError(403, 'COMMENT_DELETE_FORBIDDEN', [], '내가 쓴 댓글만 지울 수 있어요.')
   mockComments.splice(index, 1)
+}
+
+// ---- PUB-07 내 여행으로 복제 ----
+
+const LIMIT_MESSAGE = '참여 중인 여행을 포함해 여행은 최대 3개까지 가질 수 있어요. 기존 여행을 삭제하거나 나가면 더 만들 수 있어요.'
+const cloneKeys = new Map<string, number>() // 같은 요청 두 번 처리 방지 흉내
+let nextTripId = 300
+
+export async function mockCheckClonable(postId: number): Promise<CloneCheck> {
+  await wait(300)
+  rejectRestricted('CLONE_RESTRICTED', '이용 제한 중에는 복제할 수 없어요.')
+  if (!visiblePost(postId)) throw notVisible()
+  if (mockMode() === 'clone-limit') throw new ApiError(409, 'TRIP_LIMIT_EXCEEDED', [], LIMIT_MESSAGE)
+  return { activeTripCount: 2, maxTripCount: 3 }
+}
+
+export async function mockCloneToMyTrip(postId: number, req: CloneRequest): Promise<{ tripId: number }> {
+  await wait(700)
+  const done = cloneKeys.get(req.requestKey)
+  if (done !== undefined) return { tripId: done }
+  rejectRestricted('CLONE_RESTRICTED', '이용 제한 중에는 복제할 수 없어요.')
+  if (!visiblePost(postId)) throw notVisible()
+  if (mockMode() === 'clone-error') throw new Error('mock error')
+  if (mockMode() === 'clone-date') {
+    throw new ApiError(400, 'TRIP_START_DATE_OUT_OF_RANGE', [], '시작일은 오늘부터 1년 후까지 고를 수 있어요.')
+  }
+  const tripId = nextTripId++
+  cloneKeys.set(req.requestKey, tripId)
+  return { tripId }
 }

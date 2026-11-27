@@ -1,0 +1,47 @@
+/* PUB-07-01 내 여행으로 복제 창 (와이어프레임 D-04). 값은 shared/styles/variables.css */
+.clone-modal__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.clone-modal__title {
+  margin: 0;
+  font-size: var(--font-size-xl);
+  font-weight: var(--font-weight-bold);
+}
+
+.clone-modal__close {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--color-text);
+  font-size: var(--font-size-xxl);
+  line-height: 1;
+  cursor: pointer;
+}
+
+.clone-modal__count {
+  margin: var(--space-2) 0 var(--space-4);
+  font-size: var(--font-size-sm);
+  color: var(--color-text-sub);
+}
+
+.clone-modal__fields {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.clone-modal__stepper {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.clone-modal__people {
+  width: 80px;
+  text-align: center;
+}

@@ -1,4 +1,4 @@
-// 커뮤니티 서버 호출 (PUB-01 공유·게시, PUB-02 내 게시물, PUB-03 목록, PUB-04 상세, PUB-05 좋아요, PUB-06 북마크, PUB-08 댓글). 약속: contracts/community.yaml
+// 커뮤니티 서버 호출 (PUB-01 공유·게시, PUB-02 내 게시물, PUB-03 목록, PUB-04 상세, PUB-05 좋아요, PUB-06 북마크, PUB-07 복제, PUB-08 댓글). 약속: contracts/community.yaml
 // 지금은 가짜 데이터(mockData.ts)를 돌려준다. 화면 파일은 이 파일의 함수만 부른다.
 // TODO(D): 서버 API가 생기고 A가 로그인 없이 열어 주면
 //          1) 각 함수 안쪽을 shared/api/client.ts 호출로 바꾸고
@@ -6,6 +6,8 @@
 import { ApiError, type PageResponse } from '../../../shared/api/client'
 import {
   mockBookmarkPost,
+  mockCheckClonable,
+  mockCloneToMyTrip,
   mockGetCityOptions,
   mockDeleteComment,
   mockEditComment,
@@ -302,6 +304,33 @@ export function editComment(commentId: number, content: string): Promise<Comment
 /** PUB-08-04 본인 댓글 삭제: DELETE /api/community/comments/{commentId} */
 export function deleteComment(commentId: number): Promise<void> {
   return mockDeleteComment(commentId)
+}
+
+// ---- PUB-07 내 여행으로 복제 (로그인 필요) ----
+
+// 복제 창 위쪽 "내 여행 n/3" (이미 3개면 TRIP_LIMIT_EXCEEDED로 거절됨)
+export interface CloneCheck {
+  activeTripCount: number
+  maxTripCount: number
+}
+
+export interface CloneRequest {
+  requestKey: string // 같은 요청 두 번 처리 방지 (두 번 눌러도 여행 1개)
+  startDate: string // "2026-12-01" (종료일·도시·제목은 서버가 공개본 기준으로 정함)
+  peopleCount: number // 1~20
+}
+
+export const CLONE_PEOPLE_MIN = 1
+export const CLONE_PEOPLE_MAX = 20
+
+/** PUB-07-01 복제 창 열기: GET /api/community/posts/{postId}/clone-check */
+export function checkClonable(postId: number): Promise<CloneCheck> {
+  return mockCheckClonable(postId)
+}
+
+/** PUB-07-02 복제 실행: POST /api/community/posts/{postId}/clone → 새 여행 ID */
+export function cloneToMyTrip(postId: number, req: CloneRequest): Promise<{ tripId: number }> {
+  return mockCloneToMyTrip(postId, req)
 }
 
 /** 실패 안내 문구: 서버가 보낸 규칙 위반 문구(볼 수 없는 게시물·이용 제한·200개 초과 등)가 있으면 그 문구, 없으면 기능의 실패 문구 */

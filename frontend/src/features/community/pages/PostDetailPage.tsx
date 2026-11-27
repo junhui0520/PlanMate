@@ -4,7 +4,7 @@
 // 내 게시물이면 [제목·소개 수정](PUB-02-05)·[비공개 전환](PUB-02-02)
 // 아래: 댓글(PUB-08, CommentList)
 // 일정 부분은 PublicSchedule (TODO(B 일정 화면 부품으로 교체)는 그 파일에)
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useLocation, useNavigate, useParams } from 'react-router'
 import { ApiError } from '../../../shared/api/client'
 import { Button } from '../../../shared/components/Button'
@@ -27,6 +27,7 @@ import {
   updatePostInfo,
 } from '../api/communityApi.ts'
 import BookmarkButton from '../components/BookmarkButton.tsx'
+import CloneModal from '../components/CloneModal.tsx'
 import CommentList from '../components/CommentList.tsx'
 import LikeButton from '../components/LikeButton.tsx'
 import PostInfoForm from '../components/PostInfoForm.tsx'
@@ -129,7 +130,7 @@ function PostBody({ post, onChanged }: { post: PostDetail; onChanged: (post: Pos
     }
     action()
   }
-  // TODO(D): 나머지 동작은 그 기능 단계에서 붙인다 (PUB-07 복제, PUB-09 신고)
+  // TODO(D): 신고(PUB-09-01)는 그 단계에서 붙인다
   const notYet = () => {}
   const locked = viewer.loggedIn && !viewer.communityWritable // 이용 제한 회원: 버튼 모두 비활성
   const toast = useToast()
@@ -172,6 +173,10 @@ function PostBody({ post, onChanged }: { post: PostDetail; onChanged: (post: Pos
       setBookmarkBusy(false)
     }
   }
+
+  // PUB-07 내 여행으로 복제 창
+  const [cloning, setCloning] = useState(false)
+  const closeClone = useCallback(() => setCloning(false), [])
 
   // PUB-02-05 제목·소개 수정 창
   const [editing, setEditing] = useState(false)
@@ -243,7 +248,7 @@ function PostBody({ post, onChanged }: { post: PostDetail; onChanged: (post: Pos
                 busy={bookmarkBusy}
                 onClick={requireLogin(toggleBookmark)}
               />
-              <Button disabled={locked} onClick={requireLogin(notYet)}>
+              <Button disabled={locked} onClick={requireLogin(() => setCloning(true))}>
                 내 여행으로 복제
               </Button>
               <Button variant="secondary" disabled={locked} onClick={requireLogin(notYet)}>
@@ -259,6 +264,8 @@ function PostBody({ post, onChanged }: { post: PostDetail; onChanged: (post: Pos
 
       {/* PUB-08 댓글: 목록·입력칸·본인 댓글 수정·삭제 */}
       <CommentList postId={post.postId} loggedIn={viewer.loggedIn} />
+
+      {cloning && <CloneModal postId={post.postId} days={post.days} onClose={closeClone} />}
 
       {editing && (
         <PostEditModal
