@@ -17,10 +17,12 @@ import com.planmate.common.exception.BusinessException;
 import com.planmate.common.exception.ErrorCode;
 import com.planmate.common.response.PageResponse;
 import com.planmate.common.security.AccountStatusChecker;
+import com.planmate.common.security.AdminAccessChecker;
 import com.planmate.common.security.TripAccessChecker;
 import com.planmate.common.security.TripStatusReader;
 import com.planmate.common.security.TripStatusReader.TripStatus;
 import com.planmate.community.dto.PostCreateRequest;
+import com.planmate.community.dto.AdminPostStateResponse;
 import com.planmate.community.dto.MyPostResponse;
 import com.planmate.community.dto.PostCreateResponse;
 import com.planmate.community.dto.PostDetailResponse;
@@ -55,6 +57,7 @@ public class PublicPostService {
     private final DuplicateRequestChecker duplicateRequestChecker;
     private final PublicPostQueryService publicPostQueryService;
     private final PostCommentRepository postCommentRepository;
+    private final AdminAccessChecker adminAccessChecker; // A: 관리자 다시 확인
 
     /**
      * 여행의 게시 상태 (권한 검사 없음). PUB-02-03 내 여행 카드 표시용으로 B가 부른다.
@@ -166,6 +169,45 @@ public class PublicPostService {
                 .orElseThrow(() -> new BusinessException(ErrorCode.PUBLIC_POST_NOT_VISIBLE));
         tripAccessChecker.requireOwner(post.getTripId(), memberId, ErrorCode.EDIT_PERMISSION_DENIED);
         post.makePrivate();
+    }
+
+    /**
+     * PUB-09-02 관리자 비공개 (A의 ADM-02-03 신고 처리 HIDE가 부른다). ADMIN_HIDDEN = Y, 공개 여부는 그대로.
+     * 이미 숨김이면 그대로 성공하고 지금 상태를 돌려준다. 원래 여행이 휴지통이어도 할 수 있다.
+     * 없는 게시물이면 RESOURCE_NOT_ACCESSIBLE → A는 '대상 없음으로 종료(TARGET_GONE)'로 처리한다.
+     * 관리자 검사: A가 부르기 전에 확인하지만, 화면을 거치지 않은 호출 대비로 여기서도 다시 확인한다(본인 재확인은 A 몫).
+     * TODO(A와 확인): "관리자에 의해 비공개 처리되었습니다." 알림은 ADM-02-03(처리 후 A가 결과 알림)대로 A가 보낸다고 보고
+     *                 D는 보내지 않는다(AGENTS_D는 D가 보낸다고 적혀 있어 문서끼리 다름, 두 번 가지 않게 한 곳만).
+     */
+    @Transactional
+    public AdminPostStateResponse hideByAdmin(Long postId) {
+        adminAccessChecker.requireAdmin();
+        PublicPost post = findForAdmin(postId);
+        post.hideByAdmin();
+        return adminState(post);
+    }
+
+    /**
+     * PUB-09-02 관리자 비공개 해제 (A의 ADM-02-04가 부른다). ADMIN_HIDDEN = N.
+     * 소유자가 비공개로 바꿔 둔 게시물은 강제로 공개하지 않는다("관리자 비공개 해제 · 비공개 유지").
+     * 숨김이 아니면 그대로 성공. 없는 게시물이면 RESOURCE_NOT_ACCESSIBLE(지워진 콘텐츠는 복구 불가).
+     */
+    @Transactional
+    public AdminPostStateResponse unhideByAdmin(Long postId) {
+        adminAccessChecker.requireAdmin();
+        PublicPost post = findForAdmin(postId);
+        post.unhideByAdmin();
+        return adminState(post);
+    }
+
+    private PublicPost findForAdmin(Long postId) {
+        return publicPostRepository.findById(postId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_ACCESSIBLE));
+    }
+
+    private static AdminPostStateResponse adminState(PublicPost post) {
+        return new AdminPostStateResponse(post.getPostId(), post.getTripId(), post.getAuthorId(),
+                Boolean.TRUE.equals(post.getIsPublic()), Boolean.TRUE.equals(post.getAdminHidden()));
     }
 
     /**

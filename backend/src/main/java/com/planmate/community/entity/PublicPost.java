@@ -114,6 +114,19 @@ public class PublicPost {
         this.updatedAt = DateTimeUtil.now();
     }
 
+    /**
+     * PUB-09-02·ADM-02-03 관리자 비공개. 공개 여부(IS_PUBLIC)와는 따로 두는 값이라 IS_PUBLIC은 그대로 둔다.
+     * 숨기면 목록·상세·북마크·복제에서 막히고, 소유자가 다시 공개하거나 제목 수정으로 우회할 수 없다.
+     */
+    public void hideByAdmin() {
+        this.adminHidden = true;
+    }
+
+    /** PUB-09-02·ADM-02-04 관리자 비공개 해제. 소유자가 비공개로 바꿔 둔 게시물은 비공개 그대로(IS_PUBLIC 안 건드림) */
+    public void unhideByAdmin() {
+        this.adminHidden = false;
+    }
+
     /** PUB-05-01 좋아요 수 +1 (게시물 행을 잠근 뒤 부른다) */
     public void increaseLikeCount() {
         likeCount = likeCount + 1;

@@ -30,7 +30,9 @@ import com.planmate.common.exception.BusinessException;
 import com.planmate.common.exception.ErrorCode;
 import com.planmate.common.response.PageResponse;
 import com.planmate.common.security.AccountStatusChecker;
+import com.planmate.common.security.AdminAccessChecker;
 import com.planmate.common.util.DateTimeUtil;
+import com.planmate.community.dto.AdminCommentDeletedResponse;
 import com.planmate.community.dto.CommentRequest;
 import com.planmate.community.dto.CommentResponse;
 import com.planmate.community.entity.PostComment;
@@ -72,7 +74,9 @@ class PostCommentServiceTest {
             ReflectionTestUtils.setField(c, "commentId", 55L);
             return c;
         });
-        service = new PostCommentService(comments, posts, account, query);
+        admin = mock(AdminAccessChecker.class);
+        when(admin.requireAdmin()).thenReturn(99L);
+        service = new PostCommentService(comments, posts, account, query, admin);
     }
 
     // 댓글 한 개 (commentId가 클수록 늦게 씀)
@@ -303,5 +307,40 @@ class PostCommentServiceTest {
                 .requireCommunityWritable(ME, ErrorCode.COMMUNITY_FEATURE_RESTRICTED);
 
         assertError(ErrorCode.COMMUNITY_FEATURE_RESTRICTED, () -> service.delete(7L));
+    }
+
+    // ---- PUB-09-02 신고된 댓글 관리자 삭제 (A가 부름) ----
+
+    private AdminAccessChecker admin;
+
+    @Test
+    void 관리자는_남의_댓글도_바로_지우고_작성자_정보를_돌려준다() {
+        PostComment c = comment(8, OTHER);
+        when(comments.findById(8L)).thenReturn(Optional.of(c));
+        when(query.isVisible(post)).thenReturn(false); // 게시물 상태와 관계없이
+
+        AdminCommentDeletedResponse r = service.deleteByAdmin(8L);
+
+        verify(comments).delete(c);
+        assertEquals(8L, r.commentId());
+        assertEquals(POST, r.postId());
+        assertEquals(OTHER, r.authorId()); // A가 조치 안내 받을 사람으로 씀
+        verify(admin).requireAdmin();
+    }
+
+    @Test
+    void 없는_댓글이면_볼_수_없는_내용_A는_대상_없음으로_종료() {
+        when(comments.findById(99L)).thenReturn(Optional.empty());
+
+        assertError(ErrorCode.RESOURCE_NOT_ACCESSIBLE, () -> service.deleteByAdmin(99L));
+    }
+
+    @Test
+    void 관리자가_아니면_댓글을_지울_수_없다() {
+        when(admin.requireAdmin()).thenThrow(new BusinessException(ErrorCode.ADMIN_ONLY));
+        when(comments.findById(8L)).thenReturn(Optional.of(comment(8, OTHER)));
+
+        assertError(ErrorCode.ADMIN_ONLY, () -> service.deleteByAdmin(8L));
+        verify(comments, never()).delete(any());
     }
 }

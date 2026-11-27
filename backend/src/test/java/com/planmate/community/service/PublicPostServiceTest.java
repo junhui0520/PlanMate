@@ -35,9 +35,11 @@ import com.planmate.common.exception.BusinessException;
 import com.planmate.common.exception.ErrorCode;
 import com.planmate.common.response.PageResponse;
 import com.planmate.common.security.AccountStatusChecker;
+import com.planmate.common.security.AdminAccessChecker;
 import com.planmate.common.security.TripAccessChecker;
 import com.planmate.common.security.TripStatusReader;
 import com.planmate.common.security.TripStatusReader.TripStatus;
+import com.planmate.community.dto.AdminPostStateResponse;
 import com.planmate.community.dto.MyPostResponse;
 import com.planmate.community.dto.PostCreateRequest;
 import com.planmate.community.dto.PostShareStatusResponse;
@@ -87,7 +89,9 @@ class PublicPostServiceTest {
         });
         comments = mock(PostCommentRepository.class);
         when(query.isCommunityWritable(ME)).thenReturn(true);
-        service = new PublicPostService(posts, account, tripAccess, tripStatus, tripService, duplicate, query, comments);
+        admin = mock(AdminAccessChecker.class);
+        when(admin.requireAdmin()).thenReturn(99L);
+        service = new PublicPostService(posts, account, tripAccess, tripStatus, tripService, duplicate, query, comments, admin);
     }
 
     // 이미 있는 게시물 (likeCount 12, 처음 게시 10.20)
@@ -463,5 +467,91 @@ class PublicPostServiceTest {
         when(posts.findTripIdsByAuthorId(ME)).thenReturn(List.of(1003L));
 
         assertFalse(service.getMyPosts(null, null).content().get(0).communityWritable());
+    }
+
+    // ---- PUB-09-02 관리자 비공개·해제 (A가 부름) ----
+
+    private AdminAccessChecker admin;
+
+    @Test
+    void 관리자_비공개하면_숨김만_켜고_공개_여부는_그대로() {
+        PublicPost p = existing(7, true, false);
+        when(posts.findById(7L)).thenReturn(Optional.of(p));
+
+        AdminPostStateResponse r = service.hideByAdmin(7L);
+
+        assertTrue(r.adminHidden());
+        assertTrue(r.isPublic()); // IS_PUBLIC은 관리자 조치로 바뀌지 않음
+        assertEquals(ME, r.authorId()); // A가 알림 받을 사람으로 씀
+        assertEquals(TRIP, r.tripId());
+        assertTrue(p.getAdminHidden());
+        verify(admin).requireAdmin();
+    }
+
+    @Test
+    void 관리자_비공개한_게시물은_공유_상태가_ADMIN_HIDDEN이고_다시_게시할_수_없다() {
+        PublicPost p = existing(7, true, false);
+        when(posts.findById(7L)).thenReturn(Optional.of(p));
+        when(posts.findByTripId(TRIP)).thenReturn(Optional.of(p));
+
+        service.hideByAdmin(7L);
+
+        assertEquals(PostShareStatusResponse.Status.ADMIN_HIDDEN, service.findShareStatus(TRIP).status());
+        assertError(ErrorCode.POST_ADMIN_HIDDEN, () -> service.publish(TRIP, create("제목", null)));
+        assertFalse(p.isOpen()); // 목록·상세·북마크·복제의 보이는지 검사에서 빠짐
+    }
+
+    @Test
+    void 관리자_비공개한_게시물은_제목_수정으로_우회할_수_없다() {
+        PublicPost p = existing(7, true, false);
+        when(posts.findById(7L)).thenReturn(Optional.of(p));
+        service.hideByAdmin(7L);
+
+        assertError(ErrorCode.PUBLIC_POST_NOT_VISIBLE, () -> service.updateInfo(7L, new PostUpdateRequest("우회", null)));
+    }
+
+    @Test
+    void 해제하면_숨김만_끄고_소유자가_비공개로_둔_게시물은_비공개_유지() {
+        PublicPost ownerPrivate = existing(7, false, true);
+        PublicPost ownerPublic = existing(8, true, true);
+        when(posts.findById(7L)).thenReturn(Optional.of(ownerPrivate));
+        when(posts.findById(8L)).thenReturn(Optional.of(ownerPublic));
+
+        AdminPostStateResponse r7 = service.unhideByAdmin(7L);
+        AdminPostStateResponse r8 = service.unhideByAdmin(8L);
+
+        assertFalse(r7.adminHidden());
+        assertFalse(r7.isPublic()); // "관리자 비공개 해제 · 비공개 유지"
+        assertFalse(r8.adminHidden());
+        assertTrue(r8.isPublic()); // 다시 공개 목록에 보임
+        assertTrue(ownerPublic.isOpen());
+    }
+
+    @Test
+    void 이미_숨김이면_그대로_성공_숨김이_아니면_해제도_그대로_성공() {
+        when(posts.findById(7L)).thenReturn(Optional.of(existing(7, true, true)));
+        when(posts.findById(8L)).thenReturn(Optional.of(existing(8, true, false)));
+
+        assertTrue(service.hideByAdmin(7L).adminHidden());
+        assertFalse(service.unhideByAdmin(8L).adminHidden());
+    }
+
+    @Test
+    void 없는_게시물이면_볼_수_없는_내용_A는_대상_없음으로_종료() {
+        when(posts.findById(99L)).thenReturn(Optional.empty());
+
+        assertError(ErrorCode.RESOURCE_NOT_ACCESSIBLE, () -> service.hideByAdmin(99L));
+        assertError(ErrorCode.RESOURCE_NOT_ACCESSIBLE, () -> service.unhideByAdmin(99L));
+    }
+
+    @Test
+    void 관리자가_아니면_숨김도_해제도_못_한다() {
+        when(admin.requireAdmin()).thenThrow(new BusinessException(ErrorCode.ADMIN_ONLY));
+        PublicPost p = existing(7, true, false);
+        when(posts.findById(7L)).thenReturn(Optional.of(p));
+
+        assertError(ErrorCode.ADMIN_ONLY, () -> service.hideByAdmin(7L));
+        assertError(ErrorCode.ADMIN_ONLY, () -> service.unhideByAdmin(7L));
+        assertFalse(p.getAdminHidden());
     }
 }

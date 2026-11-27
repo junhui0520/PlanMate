@@ -13,7 +13,9 @@ import com.planmate.common.exception.BusinessException;
 import com.planmate.common.exception.ErrorCode;
 import com.planmate.common.response.PageResponse;
 import com.planmate.common.security.AccountStatusChecker;
+import com.planmate.common.security.AdminAccessChecker;
 import com.planmate.common.util.DateTimeUtil;
+import com.planmate.community.dto.AdminCommentDeletedResponse;
 import com.planmate.community.dto.CommentRequest;
 import com.planmate.community.dto.CommentResponse;
 import com.planmate.community.entity.PostComment;
@@ -26,7 +28,7 @@ import lombok.RequiredArgsConstructor;
 /**
  * 공개 댓글 작성·목록·수정·삭제·새 댓글 알림 (PUB-08). 대댓글·멘션 없음.
  * 목록은 비회원도 볼 수 있고, 쓰기·고치기·지우기는 로그인한 정상 회원(이용 제한 회원 불가).
- * TODO(A에 요청): 관리자 댓글 삭제(ADM-02)·탈퇴 때 본인 댓글 삭제를 부를 함수는 A와 이름을 맞춘 뒤 만든다.
+ * 관리자 댓글 삭제(PUB-09-02)는 deleteByAdmin. TODO(A에 요청): 탈퇴 때 본인 댓글 삭제를 부를 함수는 A와 이름을 맞춘 뒤 만든다.
  */
 @Service
 @RequiredArgsConstructor
@@ -40,6 +42,7 @@ public class PostCommentService {
     private final PublicPostRepository publicPostRepository;
     private final AccountStatusChecker accountStatusChecker;
     private final PublicPostQueryService publicPostQueryService;
+    private final AdminAccessChecker adminAccessChecker; // A: 관리자 다시 확인
 
     /**
      * PUB-08-02 댓글 목록: 작성 시각 오래된 순 20개, 마지막 댓글(after) 다음부터 이어 받기.
@@ -127,6 +130,20 @@ public class PostCommentService {
             throw new BusinessException(ErrorCode.COMMENT_DELETE_FORBIDDEN);
         }
         postCommentRepository.delete(comment);
+    }
+
+    /**
+     * PUB-09-02 신고된 댓글 관리자 삭제 (A의 ADM-02-03 신고 처리 DELETE가 부른다).
+     * 숨기지 않고 바로 행을 지운다(되돌릴 수 없음, 작성자도 볼 수 없음). 신고·조치 행의 댓글 ID는 DB가 비운다.
+     * 게시물 상태와 관계없이 지운다. 없는 댓글이면 RESOURCE_NOT_ACCESSIBLE → A는 '대상 없음으로 종료(TARGET_GONE)'.
+     * 관리자 검사: A가 부르기 전에 확인하지만 여기서도 다시 확인한다(본인 재확인은 A 몫).
+     */
+    @Transactional
+    public AdminCommentDeletedResponse deleteByAdmin(Long commentId) {
+        adminAccessChecker.requireAdmin();
+        PostComment comment = findComment(commentId);
+        postCommentRepository.delete(comment);
+        return new AdminCommentDeletedResponse(comment.getCommentId(), comment.getPostId(), comment.getAuthorId());
     }
 
     // PUB-08-05 본인 게시물에 본인이 단 댓글이면 알림 없음 (작성자 정보가 없어도 없음)
