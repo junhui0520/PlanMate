@@ -127,7 +127,7 @@ public class PublicPostQueryService {
 
     // 이용 제한 회원이면 false (버튼 모두 비활성, 커뮤니티는 보기만)
     // TODO(A에 요청): 참·거짓으로 돌려주는 함수가 생기면 바꾼다. 지금은 A 체커가 던지는 거절을 false로 바꾼다.
-    private boolean isCommunityWritable(Long memberId) {
+    boolean isCommunityWritable(Long memberId) {
         try {
             accountStatusChecker.requireCommunityWritable(memberId);
             return true;
@@ -136,8 +136,8 @@ public class PublicPostQueryService {
         }
     }
 
-    // 원래 여행이 휴지통(또는 없는 여행)이면 true → 목록·상세에서 뺀다
-    private boolean isTrashed(Long tripId) {
+    // 원래 여행이 휴지통(또는 없는 여행)이면 true → 목록·상세·내 게시글에서 뺀다
+    boolean isTrashed(Long tripId) {
         TripStatusReader reader = tripStatusReaderProvider.getIfAvailable();
         if (reader == null) {
             throw new IllegalStateException("TripStatusReader 구현 없음 — B 파트");

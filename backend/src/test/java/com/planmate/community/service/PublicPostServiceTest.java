@@ -16,27 +16,34 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Optional;
+import java.util.stream.LongStream;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.function.Executable;
 import org.springframework.beans.BeanUtils;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.data.domain.Limit;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import com.planmate.common.duplicate.DuplicateRequestChecker;
 import com.planmate.common.duplicate.RequestLog;
 import com.planmate.common.exception.BusinessException;
 import com.planmate.common.exception.ErrorCode;
+import com.planmate.common.response.PageResponse;
 import com.planmate.common.security.AccountStatusChecker;
 import com.planmate.common.security.TripAccessChecker;
 import com.planmate.common.security.TripStatusReader;
 import com.planmate.common.security.TripStatusReader.TripStatus;
+import com.planmate.community.dto.MyPostResponse;
 import com.planmate.community.dto.PostCreateRequest;
 import com.planmate.community.dto.PostShareStatusResponse;
 import com.planmate.community.dto.PostUpdateRequest;
 import com.planmate.community.entity.PublicPost;
+import com.planmate.community.repository.PostCommentRepository;
 import com.planmate.community.repository.PublicPostRepository;
 import com.planmate.trip.dto.TripBasicInfo;
 import com.planmate.trip.service.TripService;
@@ -58,6 +65,7 @@ class PublicPostServiceTest {
     private TripService tripService;
     private DuplicateRequestChecker duplicate;
     private PublicPostQueryService query;
+    private PostCommentRepository comments;
     private PublicPostService service;
 
     @BeforeEach
@@ -77,7 +85,9 @@ class PublicPostServiceTest {
             ReflectionTestUtils.setField(p, "postId", 7L);
             return p;
         });
-        service = new PublicPostService(posts, account, tripAccess, tripStatus, tripService, duplicate, query);
+        comments = mock(PostCommentRepository.class);
+        when(query.isCommunityWritable(ME)).thenReturn(true);
+        service = new PublicPostService(posts, account, tripAccess, tripStatus, tripService, duplicate, query, comments);
     }
 
     // 이미 있는 게시물 (likeCount 12, 처음 게시 10.20)
@@ -362,5 +372,96 @@ class PublicPostServiceTest {
         when(posts.findById(eq(99L))).thenReturn(Optional.empty());
 
         assertError(ErrorCode.PUBLIC_POST_NOT_VISIBLE, () -> service.makePrivate(99L));
+    }
+
+    // ---- PUB-02-04 내 게시글 ----
+
+    // 내 게시물 (여행 ID = postId + 1000, 게시 시각은 postId가 클수록 늦게)
+    private static PublicPost mine(long postId, boolean isPublic, boolean adminHidden, LocalDateTime updatedAt) {
+        PublicPost p = existing(postId, isPublic, adminHidden);
+        ReflectionTestUtils.setField(p, "tripId", postId + 1000);
+        ReflectionTestUtils.setField(p, "postTitle", "여행 " + postId);
+        ReflectionTestUtils.setField(p, "publishedAt", LocalDateTime.of(2026, 11, 1, 0, 0).plusHours(postId));
+        ReflectionTestUtils.setField(p, "updatedAt", updatedAt);
+        return p;
+    }
+
+    @Test
+    void 내_게시글은_상태_좋아요_댓글_수와_여행_ID를_준다() {
+        when(posts.findMine(eq(ME), any(Limit.class))).thenReturn(List.of(
+                mine(3, true, false, LocalDateTime.of(2026, 11, 20, 0, 0)),
+                mine(2, false, false, null),
+                mine(1, true, true, null)));
+        when(posts.findTripIdsByAuthorId(ME)).thenReturn(List.of(1003L, 1002L, 1001L));
+        when(comments.countByPostId(3L)).thenReturn(3L);
+
+        PageResponse<MyPostResponse> res = service.getMyPosts(null, null);
+
+        List<MyPostResponse> c = res.content();
+        assertEquals(PostShareStatusResponse.Status.PUBLIC, c.get(0).status());
+        assertEquals(PostShareStatusResponse.Status.PRIVATE, c.get(1).status());
+        assertEquals(PostShareStatusResponse.Status.ADMIN_HIDDEN, c.get(2).status());
+        assertEquals(1003L, c.get(0).tripId()); // [공개 전환] → 그 여행의 공유하기
+        assertEquals(12, c.get(0).likeCount());
+        assertEquals(3L, c.get(0).commentCount());
+        assertEquals(0L, c.get(1).commentCount());
+        assertTrue(c.get(0).communityWritable());
+        assertEquals(3, res.totalElements());
+        assertFalse(res.hasNext());
+        assertEquals(10, res.size());
+    }
+
+    @Test
+    void 휴지통_여행의_게시물은_빼고_10개가_찰_때까지_더_읽는다() {
+        List<PublicPost> first = LongStream.rangeClosed(1, 11).map(i -> 30 - i)
+                .mapToObj(id -> mine(id, true, false, null)).toList(); // 29~19
+        when(posts.findMine(eq(ME), any(Limit.class))).thenReturn(first);
+        when(query.isTrashed(1028L)).thenReturn(true);
+        PublicPost last = first.get(10); // 19번
+        when(posts.findMineAfter(eq(ME), eq(last.getPublishedAt()), eq(19L), any(Limit.class)))
+                .thenReturn(List.of(mine(18, true, false, null), mine(17, true, false, null)));
+        when(posts.findTripIdsByAuthorId(ME)).thenReturn(List.of(1029L, 1028L));
+
+        PageResponse<MyPostResponse> res = service.getMyPosts(null, 0);
+
+        assertEquals(List.of(29L, 27L, 26L, 25L, 24L, 23L, 22L, 21L, 20L, 19L),
+                res.content().stream().map(MyPostResponse::postId).toList());
+        assertTrue(res.hasNext()); // 18번이 남음
+        assertEquals(1, res.totalElements()); // 휴지통 제외
+    }
+
+    @Test
+    void 이어_받기는_수정_시각_또는_게시_시각_기준() {
+        LocalDateTime edited = LocalDateTime.of(2026, 11, 25, 9, 0);
+        PublicPost cursor = mine(5, true, false, edited);
+        when(posts.findById(5L)).thenReturn(Optional.of(cursor));
+        when(posts.findMineAfter(eq(ME), eq(edited), eq(5L), any(Limit.class))).thenReturn(List.of(mine(4, false, false, null)));
+        when(posts.findTripIdsByAuthorId(ME)).thenReturn(List.of());
+
+        PageResponse<MyPostResponse> res = service.getMyPosts(5L, 1);
+
+        assertEquals(4L, res.content().get(0).postId());
+        assertEquals(1, res.page());
+    }
+
+    @Test
+    void 이어_받기_기준이_남의_게시물이거나_없으면_INVALID_INPUT() {
+        PublicPost others = mine(5, true, false, null);
+        ReflectionTestUtils.setField(others, "authorId", 2L);
+        when(posts.findById(5L)).thenReturn(Optional.of(others));
+        when(posts.findById(6L)).thenReturn(Optional.empty());
+
+        assertError(ErrorCode.INVALID_INPUT, () -> service.getMyPosts(5L, 1));
+        assertError(ErrorCode.INVALID_INPUT, () -> service.getMyPosts(6L, 1));
+        assertError(ErrorCode.INVALID_INPUT, () -> service.getMyPosts(null, -1));
+    }
+
+    @Test
+    void 이용_제한_회원도_목록은_보고_버튼은_비활성() {
+        when(query.isCommunityWritable(ME)).thenReturn(false);
+        when(posts.findMine(eq(ME), any(Limit.class))).thenReturn(List.of(mine(3, true, false, null)));
+        when(posts.findTripIdsByAuthorId(ME)).thenReturn(List.of(1003L));
+
+        assertFalse(service.getMyPosts(null, null).content().get(0).communityWritable());
     }
 }

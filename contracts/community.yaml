@@ -8,7 +8,8 @@ info:
     응답·에러·날짜 형식은 `contracts/common.yaml`을 따른다.
     - 지금 있는 API: PUB-01 공유하기·미리보기·게시, PUB-02-02 비공개 전환, PUB-02-05 제목·소개 수정,
       PUB-03 공개 여행 목록·검색·정렬, PUB-04 공개 여행 상세, PUB-05 좋아요·취소, PUB-06 북마크·내 북마크
-    - 다른 기능(PUB-02-04 내 게시글, PUB-07~09 복제·댓글·신고)은 만들 때 이 파일에 더한다.
+    - PUB-02-04 내 게시글도 있다.
+    - 다른 기능(PUB-07~09 복제·댓글·신고)은 만들 때 이 파일에 더한다.
     - 게시물 사진(POST_IMAGE_URL)은 형식·크기·저장 위치가 정해지지 않아 아직 받지 않는다(항상 null → 기본 배경).
     - 좋아요·북마크·내 북마크는 로그인이 필요하다(기본 규칙 그대로, A에 따로 요청할 것 없음).
 
@@ -574,6 +575,58 @@ paths:
         '409':
           $ref: './common.yaml#/components/responses/Conflict'
 
+  /api/community/my-posts:
+    get:
+      tags: [community]
+      operationId: getMyPosts
+      summary: "PUB-02-04 내 게시글 목록"
+      description: |
+        내가 작성자인 게시물(공유한 적 있는 것, 원래 여행이 휴지통이면 제외).
+        정렬: 게시·수정 시각 최신순(고쳤으면 수정 시각, 아니면 처음 게시 시각), 같으면 postId 큰 순. 10개씩.
+        다음 10개는 마지막 카드의 postId를 `after`로 보낸다(내 게시물이 아니거나 없으면 400 INVALID_INPUT).
+        카드 버튼: PUBLIC → [비공개 전환](PATCH .../private), PRIVATE → [공개 전환](tripId의 공유하기 흐름), ADMIN_HIDDEN → 버튼 없음.
+        이용 제한 회원도 목록은 볼 수 있고, communityWritable = false면 버튼을 비활성으로 보여 준다.
+        권한: 로그인 회원 본인.
+      parameters:
+        - name: after
+          in: query
+          required: false
+          description: "지금까지 받은 마지막 카드의 postId. 없으면 첫 10개"
+          schema:
+            $ref: './common.yaml#/components/schemas/Id'
+        - name: page
+          in: query
+          required: false
+          description: "몇 번째 요청인지(0부터). 서버는 응답 page에 그대로 돌려준다"
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+      responses:
+        '200':
+          description: "내 게시글 (한 번에 10개)"
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: './common.yaml#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        allOf:
+                          - $ref: './common.yaml#/components/schemas/PageResponse'
+                          - type: object
+                            properties:
+                              content:
+                                type: array
+                                maxItems: 10
+                                items:
+                                  $ref: '#/components/schemas/MyPostResponse'
+        '400':
+          $ref: './common.yaml#/components/responses/BadRequest'
+        '401':
+          $ref: './common.yaml#/components/responses/Unauthorized'
+
   /api/community/posts/{postId}/info:
     put:
       tags: [community]
@@ -957,3 +1010,33 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/PublicDay'
+
+    MyPostResponse:
+      type: object
+      description: "PUB-02-04 내 게시글 카드 한 개: 제목 + \"공개\"/\"비공개\"/\"관리자 비공개\", \"게시 10.20 · 수정 10.28 · 좋아요 12 · 댓글 3\""
+      required: [postId, tripId, title, status, publishedAt, updatedAt, likeCount, commentCount, communityWritable]
+      properties:
+        postId:
+          $ref: './common.yaml#/components/schemas/Id'
+        tripId:
+          $ref: './common.yaml#/components/schemas/Id'
+        title:
+          type: string
+        status:
+          type: string
+          enum: [PUBLIC, PRIVATE, ADMIN_HIDDEN]
+        publishedAt:
+          $ref: './common.yaml#/components/schemas/LocalDateTime'
+        updatedAt:
+          oneOf:
+            - $ref: './common.yaml#/components/schemas/LocalDateTime'
+            - type: 'null'
+        likeCount:
+          type: integer
+          minimum: 0
+        commentCount:
+          type: integer
+          minimum: 0
+        communityWritable:
+          type: boolean
+          description: "이용 제한 회원이면 false → [비공개 전환]·[공개 전환] 비활성"

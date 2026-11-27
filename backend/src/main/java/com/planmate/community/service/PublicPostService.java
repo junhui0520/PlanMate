@@ -1,10 +1,13 @@
 package com.planmate.community.service;
 
+import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.data.domain.Limit;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -12,17 +15,20 @@ import com.planmate.common.duplicate.DuplicateRequestChecker;
 import com.planmate.common.duplicate.RequestLog;
 import com.planmate.common.exception.BusinessException;
 import com.planmate.common.exception.ErrorCode;
+import com.planmate.common.response.PageResponse;
 import com.planmate.common.security.AccountStatusChecker;
 import com.planmate.common.security.TripAccessChecker;
 import com.planmate.common.security.TripStatusReader;
 import com.planmate.common.security.TripStatusReader.TripStatus;
 import com.planmate.community.dto.PostCreateRequest;
+import com.planmate.community.dto.MyPostResponse;
 import com.planmate.community.dto.PostCreateResponse;
 import com.planmate.community.dto.PostDetailResponse;
 import com.planmate.community.dto.PostPreviewResponse;
 import com.planmate.community.dto.PostShareStatusResponse;
 import com.planmate.community.dto.PostUpdateRequest;
 import com.planmate.community.entity.PublicPost;
+import com.planmate.community.repository.PostCommentRepository;
 import com.planmate.community.repository.PublicPostRepository;
 import com.planmate.trip.service.TripService;
 
@@ -39,6 +45,7 @@ public class PublicPostService {
 
     static final int TITLE_MAX = 40; // PUB-01-01 공개용 제목 1~40자
     static final int INTRO_MAX = 100; // PUB-01-01 소개 0~100자
+    static final int MY_POSTS_PAGE_SIZE = 10; // PUB-02-04 10개씩
 
     private final PublicPostRepository publicPostRepository;
     private final AccountStatusChecker accountStatusChecker;
@@ -47,6 +54,7 @@ public class PublicPostService {
     private final TripService tripService; // B: 여행 일수 (findBasicInfo)
     private final DuplicateRequestChecker duplicateRequestChecker;
     private final PublicPostQueryService publicPostQueryService;
+    private final PostCommentRepository postCommentRepository;
 
     /**
      * 여행의 게시 상태 (권한 검사 없음). PUB-02-03 내 여행 카드 표시용으로 B가 부른다.
@@ -158,6 +166,57 @@ public class PublicPostService {
                 .orElseThrow(() -> new BusinessException(ErrorCode.PUBLIC_POST_NOT_VISIBLE));
         tripAccessChecker.requireOwner(post.getTripId(), memberId, ErrorCode.EDIT_PERMISSION_DENIED);
         post.makePrivate();
+    }
+
+    /**
+     * PUB-02-04 내 게시글: 내가 작성자인 게시물(휴지통 여행 제외), 게시·수정 시각 최신순 10개.
+     * 마지막 카드(after) 다음부터 이어 받는다. page는 화면이 몇 번째로 불렀는지(0부터) 그대로 돌려준다.
+     * 이용 제한 회원도 목록은 볼 수 있고, 카드의 communityWritable = false로 버튼을 비활성으로 보여 준다.
+     */
+    @Transactional(readOnly = true)
+    public PageResponse<MyPostResponse> getMyPosts(Long after, Integer page) {
+        Long memberId = accountStatusChecker.requireLoginMemberId();
+        if (page != null && page < 0) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT);
+        }
+        // 이어 받기 기준은 내 게시물만 (없거나 남의 게시물이면 INVALID_INPUT)
+        PublicPost cursor = after == null ? null
+                : publicPostRepository.findById(after)
+                        .filter(p -> memberId.equals(p.getAuthorId()))
+                        .orElseThrow(() -> new BusinessException(ErrorCode.INVALID_INPUT));
+
+        // 10개 + 1개(다음이 있는지 확인용)가 찰 때까지 읽으면서 휴지통 여행은 뺀다
+        Limit limit = Limit.of(MY_POSTS_PAGE_SIZE + 1);
+        List<PublicPost> picked = new ArrayList<>();
+        while (picked.size() <= MY_POSTS_PAGE_SIZE) {
+            List<PublicPost> batch = cursor == null
+                    ? publicPostRepository.findMine(memberId, limit)
+                    : publicPostRepository.findMineAfter(memberId, sortAt(cursor), cursor.getPostId(), limit);
+            for (PublicPost post : batch) {
+                if (picked.size() > MY_POSTS_PAGE_SIZE) break;
+                if (!publicPostQueryService.isTrashed(post.getTripId())) picked.add(post);
+            }
+            if (batch.size() < MY_POSTS_PAGE_SIZE + 1) break;
+            cursor = batch.get(batch.size() - 1);
+        }
+        boolean hasNext = picked.size() > MY_POSTS_PAGE_SIZE;
+        boolean writable = publicPostQueryService.isCommunityWritable(memberId);
+        List<MyPostResponse> content = picked.stream().limit(MY_POSTS_PAGE_SIZE)
+                .map(post -> new MyPostResponse(post.getPostId(), post.getTripId(), post.getPostTitle(),
+                        statusOf(post).status(), post.getPublishedAt(), post.getUpdatedAt(), post.getLikeCount(),
+                        postCommentRepository.countByPostId(post.getPostId()), writable))
+                .toList();
+
+        long total = publicPostRepository.findTripIdsByAuthorId(memberId).stream()
+                .filter(tripId -> !publicPostQueryService.isTrashed(tripId))
+                .count();
+        int totalPages = (int) ((total + MY_POSTS_PAGE_SIZE - 1) / MY_POSTS_PAGE_SIZE);
+        return new PageResponse<>(content, page == null ? 0 : page, MY_POSTS_PAGE_SIZE, total, totalPages, hasNext);
+    }
+
+    // PUB-02-04 정렬 기준: 고쳤으면 수정 시각, 아니면 처음 게시 시각
+    private static LocalDateTime sortAt(PublicPost post) {
+        return post.getUpdatedAt() != null ? post.getUpdatedAt() : post.getPublishedAt();
     }
 
     // 공유·미리보기·게시 공통 검사: 로그인 → 이용 제한 → 휴지통 → 소유자. 통과하면 로그인 회원 ID

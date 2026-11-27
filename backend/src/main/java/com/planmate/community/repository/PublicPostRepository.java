@@ -31,6 +31,29 @@ public interface PublicPostRepository extends JpaRepository<PublicPost, Long> {
     // PUB-01 여행당 게시물 1개 (UQ_PUBLIC_POST_01)
     Optional<PublicPost> findByTripId(Long tripId);
 
+    // PUB-02-04 내 게시글 첫 묶음: 게시·수정 시각 최신순(고쳤으면 수정 시각, 아니면 처음 게시 시각), 같으면 POST_ID 큰 순
+    @Query("""
+            select p from PublicPost p
+            where p.authorId = :authorId
+            order by coalesce(p.updatedAt, p.publishedAt) desc, p.postId desc
+            """)
+    List<PublicPost> findMine(@Param("authorId") Long authorId, Limit limit);
+
+    // PUB-02-04 내 게시글 이어 받기 (마지막 카드보다 뒤)
+    @Query("""
+            select p from PublicPost p
+            where p.authorId = :authorId
+              and (coalesce(p.updatedAt, p.publishedAt) < :sortAt
+                   or (coalesce(p.updatedAt, p.publishedAt) = :sortAt and p.postId < :postId))
+            order by coalesce(p.updatedAt, p.publishedAt) desc, p.postId desc
+            """)
+    List<PublicPost> findMineAfter(@Param("authorId") Long authorId, @Param("sortAt") LocalDateTime sortAt,
+            @Param("postId") Long postId, Limit limit);
+
+    // PUB-02-04 내 게시물 전체 수 (휴지통 여부는 서비스가 B에게 물어 뺀다)
+    @Query("select p.tripId from PublicPost p where p.authorId = :authorId")
+    List<Long> findTripIdsByAuthorId(@Param("authorId") Long authorId);
+
     // PUB-05·06 좋아요·북마크 처리 중 게시물 행 잠금: 연타·동시 요청이 차례로 처리돼 좋아요 수가 두 번 오르지 않는다
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select p from PublicPost p where p.postId = :postId")
