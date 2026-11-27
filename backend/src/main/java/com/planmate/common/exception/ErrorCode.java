@@ -84,6 +84,8 @@ public enum ErrorCode {
     COMMENT_TOO_FAST(HttpStatus.TOO_MANY_REQUESTS, "잠시 후 다시 등록해 주세요."),
     COMMENT_EDIT_FORBIDDEN(HttpStatus.FORBIDDEN, "내가 쓴 댓글만 고칠 수 있어요."),
     COMMENT_DELETE_FORBIDDEN(HttpStatus.FORBIDDEN, "내가 쓴 댓글만 지울 수 있어요."),
+    // PUB-07-01·02 내 여행으로 복제: 이용 제한 회원
+    CLONE_RESTRICTED(HttpStatus.FORBIDDEN, "이용 제한 중에는 복제할 수 없어요."),
 
     ;
 
