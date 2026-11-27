@@ -20,7 +20,7 @@ import java.time.LocalDateTime;
 
 /**
  * MEMBER (회원). schema.sql 그대로 전체 칼럼.
- * 생성 메서드는 가입 기능(ACC-01·03)에서 추가한다.
+ * 이메일 회원 생성은 createEmailMember(ACC-01-04). 소셜 회원 생성은 ACC-03에서 추가한다.
  */
 @Entity
 @Table(name = "MEMBER")
@@ -95,6 +95,22 @@ public class Member {
     // 탈퇴 확정 시각. 2주 보관 기한 계산용 (ACC-06-03)
     @Column(name = "DELETED_AT")
     private LocalDateTime deletedAt;
+
+    /**
+     * 이메일 회원 생성 (ACC-01-04). PROVIDER=EMAIL, SYSTEM_ROLE=USER, STATUS=ACTIVE.
+     * 관리자 역할은 가입 입력에서 받지 않는다. 비밀번호는 해시만 받는다(A-P02).
+     * PASSWORD_CHANGED_AT·집 주소는 비워 둔다(집 주소는 ACC-05-02).
+     */
+    public static Member createEmailMember(String nickname, String emailNormalized, String passwordHash) {
+        Member member = new Member();
+        member.nickname = nickname;
+        member.emailNormalized = emailNormalized;
+        member.passwordHash = passwordHash;
+        member.provider = Provider.EMAIL;
+        member.systemRole = SystemRole.USER;
+        member.status = Status.ACTIVE;
+        return member;
+    }
 
     /** 정상 계정인지 (ACC-07-01) */
     public boolean isActive() {

@@ -12,8 +12,11 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.time.Duration;
+
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -37,6 +40,15 @@ class GlobalExceptionHandlerTest {
                 .andExpect(jsonPath("$.data.code").value("DUPLICATE_REQUEST"))
                 .andExpect(jsonPath("$.data.fieldErrors").isEmpty())
                 .andExpect(jsonPath("$.message").value("이미 처리된 요청이에요."));
+    }
+
+    @Test
+    void retryAfter가_있으면_Retry_After_헤더를_초_올림으로_붙인다() throws Exception {
+        mockMvc.perform(get("/test/limited"))
+                .andExpect(status().isTooManyRequests())
+                .andExpect(header().string("Retry-After", "42"))
+                .andExpect(jsonPath("$.data.code").value("VERIFICATION_REQUEST_LIMITED"))
+                .andExpect(jsonPath("$.message").value("잠시 후 다시 요청해 주세요."));
     }
 
     @Test
@@ -78,6 +90,12 @@ class GlobalExceptionHandlerTest {
         @GetMapping("/test/business")
         void business() {
             throw new BusinessException(ErrorCode.DUPLICATE_REQUEST);
+        }
+
+        @GetMapping("/test/limited")
+        void limited() {
+            // 41.2초 남음 -> 42초로 올림
+            throw new BusinessException(ErrorCode.VERIFICATION_REQUEST_LIMITED, Duration.ofMillis(41_200));
         }
 
         @PostMapping("/test/valid")

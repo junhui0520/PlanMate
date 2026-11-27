@@ -18,6 +18,20 @@ spring:
     jdbc:
       initialize-schema: never    # SPRING_SESSION 테이블은 schema.sql로 이미 만들어 둠
       table-name: SPRING_SESSION
+  mail:                           # 인증번호 메일 (ACC-01-02·ACC-04-02). 값은 환경변수 또는 application-local.yml
+    host: ${MAIL_HOST:}           # 비어 있으면 연결하지 않고 발송 실패(502)로 처리
+    port: ${MAIL_PORT:587}
+    username: ${MAIL_USERNAME:}
+    password: ${MAIL_PASSWORD:}
+    properties:
+      mail:
+        smtp:
+          auth: true
+          starttls:
+            enable: true
+          connectiontimeout: 5000
+          timeout: 5000
+          writetimeout: 5000
 
 server:
   servlet:
@@ -30,3 +44,5 @@ server:
 
 planmate:
   frontend-url: ${FRONTEND_URL:http://localhost:5173}
+  auth:
+    email-verification-hmac-secret: ${EMAIL_VERIFICATION_HMAC_SECRET}   # 인증번호 HMAC 비밀키 (A-P09). 기본값 없음, 없으면 시작 실패
