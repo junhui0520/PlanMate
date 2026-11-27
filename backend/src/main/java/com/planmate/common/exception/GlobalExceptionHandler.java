@@ -7,6 +7,7 @@ import jakarta.validation.ConstraintViolationException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.MessageSourceResolvable;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.validation.FieldError;
@@ -20,6 +21,7 @@ import org.springframework.web.method.annotation.HandlerMethodValidationExceptio
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -31,11 +33,22 @@ import java.util.List;
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
-    /** 서비스의 규칙 위반 */
+    /** 서비스의 규칙 위반. retryAfter가 있으면 Retry-After 헤더(초, 올림, 최소 1)를 붙인다 (ACC-01-02 요청 제한) */
     @ExceptionHandler(BusinessException.class)
     public ResponseEntity<ApiResponse<ErrorData>> handleBusiness(BusinessException e) {
         log.debug("BusinessException: {}", e.getErrorCode().name());
-        return toResponse(e.getErrorCode());
+        ErrorCode errorCode = e.getErrorCode();
+        ResponseEntity.BodyBuilder builder = ResponseEntity.status(errorCode.getStatus());
+        if (e.getRetryAfter() != null) {
+            builder.header(HttpHeaders.RETRY_AFTER, String.valueOf(retryAfterSeconds(e.getRetryAfter())));
+        }
+        return builder.body(ApiResponse.fail(errorCode));
+    }
+
+    // 남은 시간을 초로 올림, 최소 1초
+    private static long retryAfterSeconds(Duration retryAfter) {
+        long millis = Math.max(retryAfter.toMillis(), 0);
+        return Math.max((millis + 999) / 1000, 1);
     }
 
     /** @Valid 요청 본문 검증 실패. 검증 어노테이션의 message에는 각 파트가 기능정의서 문구를 넣는다. */

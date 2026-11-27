@@ -38,6 +38,15 @@ public enum ErrorCode {
     ADMIN_REAUTH_REQUIRED(HttpStatus.FORBIDDEN, "보안을 위해 본인 확인을 다시 진행해 주세요."),
 
     // ===== A 파트 (auth·member·participant·notification·admin·savedplace·weather·checklist·cs) =====
+    // ACC-01-02·ACC-04-02 인증번호 발송
+    VERIFICATION_SEND_FAILED(HttpStatus.BAD_GATEWAY, "인증번호를 보내지 못했어요. 다시 시도해 주세요."),
+    VERIFICATION_REQUEST_LIMITED(HttpStatus.TOO_MANY_REQUESTS, "잠시 후 다시 요청해 주세요."),
+    // ACC-01-03·ACC-04-02 인증번호 확인
+    VERIFICATION_CODE_MISMATCH(HttpStatus.BAD_REQUEST, "인증번호가 일치하지 않아요."),
+    VERIFICATION_EXPIRED(HttpStatus.BAD_REQUEST, "인증 시간이 지났어요. 번호를 다시 받아 주세요."),
+    VERIFICATION_ATTEMPTS_EXCEEDED(HttpStatus.BAD_REQUEST, "입력 횟수를 초과했어요. 인증번호를 다시 받아 주세요."),
+    // ACC-01-04 이메일 가입 완료 (이메일 소유 확인 뒤에만 안내)
+    EMAIL_ALREADY_REGISTERED(HttpStatus.CONFLICT, "이미 이메일로 가입한 계정이에요. 로그인하거나 비밀번호를 재설정해 주세요."),
 
     // ===== B 파트 (trip·schedule·collab) =====
     // TRP-01-01·03 여행 생성
