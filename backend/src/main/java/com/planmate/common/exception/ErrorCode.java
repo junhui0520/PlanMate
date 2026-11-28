@@ -47,6 +47,9 @@ public enum ErrorCode {
     VERIFICATION_ATTEMPTS_EXCEEDED(HttpStatus.BAD_REQUEST, "입력 횟수를 초과했어요. 인증번호를 다시 받아 주세요."),
     // ACC-01-04 이메일 가입 완료 (이메일 소유 확인 뒤에만 안내)
     EMAIL_ALREADY_REGISTERED(HttpStatus.CONFLICT, "이미 이메일로 가입한 계정이에요. 로그인하거나 비밀번호를 재설정해 주세요."),
+    // ACC-02-01 이메일 로그인 (잘못된 이메일·비밀번호는 같은 오류, 제한 시각은 화면에 안 보여 Retry-After 없음)
+    LOGIN_FAILED(HttpStatus.UNAUTHORIZED, "이메일 또는 비밀번호를 확인해 주세요."),
+    LOGIN_ATTEMPTS_LIMITED(HttpStatus.TOO_MANY_REQUESTS, "로그인 시도가 많아요. 잠시 후 다시 시도해 주세요."),
 
     // ===== B 파트 (trip·schedule·collab) =====
     // TRP-01-01·03 여행 생성
