@@ -28,7 +28,8 @@ public class SessionPolicyFilter extends OncePerRequestFilter {
 
     static final Duration USER_IDLE = Duration.ofMinutes(60);
     static final Duration USER_MAX = Duration.ofHours(12);
-    static final Duration ADMIN_IDLE = Duration.ofMinutes(15);
+    /** 관리자 무활동 15분. 로그인할 때도 이 값으로 세션을 만든다(LoginService, ACC-02-01) */
+    public static final Duration ADMIN_IDLE = Duration.ofMinutes(15);
     static final Duration ADMIN_MAX = Duration.ofHours(8);
 
     @Override

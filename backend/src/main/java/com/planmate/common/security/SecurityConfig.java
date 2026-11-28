@@ -10,6 +10,8 @@ import org.springframework.security.crypto.factory.PasswordEncoderFactories;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.context.SecurityContextHolderFilter;
+import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
+import org.springframework.security.web.csrf.CsrfTokenRepository;
 
 /**
  * 로그인이 필요한 주소·세션·CSRF·CORS 설정 (ACC-07).
@@ -20,13 +22,14 @@ import org.springframework.security.web.context.SecurityContextHolderFilter;
 public class SecurityConfig {
 
     @Bean
-    public SecurityFilterChain securityFilterChain(HttpSecurity http, SecurityErrorHandler securityErrorHandler)
-            throws Exception {
+    public SecurityFilterChain securityFilterChain(HttpSecurity http, SecurityErrorHandler securityErrorHandler,
+                                                   CsrfTokenRepository csrfTokenRepository) throws Exception {
         http
                 // WebConfig의 corsConfigurationSource 빈 사용 (프론트 주소만, 쿠키 포함)
                 .cors(Customizer.withDefaults())
-                // SPA용 CSRF: XSRF-TOKEN 쿠키를 화면이 읽어 X-XSRF-TOKEN 헤더로 보낸다
-                .csrf(csrf -> csrf.spa())
+                // SPA용 CSRF: XSRF-TOKEN 쿠키를 화면이 읽어 X-XSRF-TOKEN 헤더로 보낸다.
+                // spa()를 먼저 부르고 저장소만 빈으로 바꾼다(spa()의 요청 처리기는 그대로). 순서를 바꾸면 spa()가 저장소를 덮어쓴다
+                .csrf(csrf -> csrf.spa().csrfTokenRepository(csrfTokenRepository))
                 .formLogin(AbstractHttpConfigurer::disable)
                 .httpBasic(AbstractHttpConfigurer::disable)
                 .logout(AbstractHttpConfigurer::disable)
@@ -47,6 +50,15 @@ public class SecurityConfig {
                 // 세션 시간 정책 (A-P08). 세션 고정 보호는 기본값(changeSessionId)
                 .addFilterAfter(new SessionPolicyFilter(), SecurityContextHolderFilter.class);
         return http.build();
+    }
+
+    /**
+     * CSRF 토큰 저장소 (spa()와 같은 설정: 쿠키 XSRF-TOKEN, 헤더 X-XSRF-TOKEN, 화면이 읽을 수 있게 HttpOnly 끔).
+     * csrf 설정과 LoginService(로그인·로그아웃 때 토큰 교체, ACC-02)가 같은 저장소를 쓴다.
+     */
+    @Bean
+    public CsrfTokenRepository csrfTokenRepository() {
+        return CookieCsrfTokenRepository.withHttpOnlyFalse();
     }
 
     /**
