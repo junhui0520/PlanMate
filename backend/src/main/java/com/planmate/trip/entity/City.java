@@ -12,6 +12,8 @@ import jakarta.persistence.Table;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 import java.math.BigDecimal;
 
@@ -46,7 +48,8 @@ public class City {
     @Column(name = "NAME_EN", nullable = false, length = 100)
     private String nameEn;
 
-    // 국가 코드 2자리 (예: KR, JP)
+    // 국가 코드 2자리 (예: KR, JP). DB가 CHAR(2)라 Hibernate에도 CHAR로 알려 준다(ddl-auto=validate 통과용)
+    @JdbcTypeCode(SqlTypes.CHAR)
     @Column(name = "COUNTRY_CODE", nullable = false, length = 2)
     private String countryCode;
 
