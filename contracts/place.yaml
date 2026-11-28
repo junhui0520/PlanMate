@@ -1,0 +1,99 @@
+openapi: 3.1.0
+
+info:
+  title: "PlanMate 장소 API 약속 (C 파트)"
+  version: "0.1.0"
+  description: |
+    장소 검색·상세·지도 API 약속. 기준: 세부기능정의서 v33 PLC-01~03.
+    응답·에러·날짜 형식은 `contracts/common.yaml`을 따른다.
+    - 지금 있는 것: PLC-01-02 공통 장소 형식(PlaceResponse). 다른 파트(A 보관함, B 공동 후보·일정, D 공개 화면)와 주고받는 장소 모양이다.
+    - 장소 검색(PLC-01-01)·상세(PLC-02-01) API는 만들 때 이 파일에 더한다.
+
+    ## 공통 장소 형식 규칙 (PLC-01-02)
+    - 같은 장소 판단 = provider + placeId (B의 후보 중복 판단과 같은 기준)
+    - 국내 여행은 KAKAO, 해외 여행은 GOOGLE (도시의 mapProvider). 한 여행 안에서 섞지 않는다.
+    - ADDRESS = 장소 ID 없는 주소 변환 결과. 후보·일정에 넣을 수 없고 개인 출발 장소에만 쓴다.
+    - lat·lng가 null이면 '위치 미확인': 목록에 "위치 미확인" 표시, 지도 핀 생략. (0, 0)이나 빈 값을 임의 좌표로 바꾸지 않는다.
+    - 후보·일정에 넘기려면 provider(ADDRESS 제외)·placeId·placeName·lat·lng가 모두 있어야 한다(PLC-01-03).
+    - 구글 장소는 placeId만 오래 저장하고, 나머지는 이용 조건이 허용하는 기간만 보관한다(V05).
+
+    ## 카테고리 대응표 (PLC-01-02, 사용자 확정 11/28)
+    제공자 카테고리를 내부 카테고리 코드로 바꾸는 표. 표에 없으면 ETC. 변환은 서버(PlaceSearchService)가 한다.
+    카카오 코드값은 카카오맵 REST API '키워드로 장소 검색'의 CategoryGroupCode 표, 구글 유형 이름은 Places API(New) '장소 유형' 표 A와 대조했다(11/28).
+    카카오 분류명 "교통,수송"은 문서에 없어 실제 응답으로 확인해야 한다.
+
+    | 내부 코드 | 카카오 (category_group_code / category_name) | 구글 (primaryType 먼저, 없으면 types 앞에서부터) |
+    |---|---|---|
+    | ATTRACTION | AT4 관광명소, CT1 문화시설 | tourist_attraction, museum, art_gallery, park, amusement_park, aquarium, zoo, national_park, historical_landmark, historical_place, cultural_landmark, monument, castle, art_museum, history_museum, observation_deck, botanical_garden, garden, plaza, beach, scenic_spot, buddhist_temple, shinto_shrine, city_park, state_park, water_park, wildlife_park |
+    | FOOD | FD6 음식점 | restaurant, ~_restaurant, steak_house, diner, bistro, food_court, cafeteria, deli, gastropub, noodle_shop, sandwich_shop, kebab_shop |
+    | CAFE | CE7 카페 | cafe, coffee_shop, tea_house, cat_cafe, dog_cafe, coffee_roastery, coffee_stand, bakery, dessert_shop, cake_shop, pastry_shop, ice_cream_shop, donut_shop |
+    | SHOPPING | MT1 대형마트 | shopping_mall, department_store, market, supermarket, store, ~_store(convenience_store 제외), gift_shop, flea_market, farmers_market, hypermarket, discount_supermarket |
+    | LODGING | AD5 숙박 | lodging, hotel, motel, hostel, resort_hotel, guest_house, bed_and_breakfast, inn, japanese_inn, budget_japanese_inn, extended_stay_hotel, private_guest_room |
+    | TRANSPORT | SW8 지하철역, 분류명이 "교통,수송"으로 시작 | airport, international_airport, train_station, subway_station, light_rail_station, bus_station, transit_station |
+    | ETC | 그 밖의 코드 (CS2 편의점 포함) | convenience_store(편의점, 카카오와 맞춤), 그 밖의 유형 (bar·pub 같은 술집 포함) |
+
+servers:
+  - url: http://localhost:8080
+    description: "로컬 개발 (VITE_API_BASE_URL과 같은 값)"
+
+tags:
+  - name: place
+    description: "장소 검색·상세·지도 (PLC)"
+
+components:
+  schemas:
+    PlaceProvider:
+      type: string
+      enum: [KAKAO, GOOGLE, ADDRESS]
+      description: "제공자 (PROVIDER). KAKAO = 국내, GOOGLE = 해외, ADDRESS = 장소 ID 없는 주소 변환 결과"
+
+    PlaceCategory:
+      type: string
+      enum: [ATTRACTION, FOOD, CAFE, SHOPPING, LODGING, TRANSPORT, ETC]
+      description: "카테고리 코드 (CATEGORY). 관광명소 / 식당 / 카페 / 쇼핑 / 숙소 / 교통(공항·역) / 기타"
+
+    PlaceResponse:
+      type: object
+      description: "공통 장소 형식 (PLC-01-02). 이 자체는 저장 테이블이 아니며, B의 TRIP_CANDIDATE·A의 보관함이 이 형식 그대로 저장한다"
+      required: [provider, placeId, placeName, address, lat, lng, category, fetchedAt]
+      properties:
+        provider:
+          $ref: '#/components/schemas/PlaceProvider'
+        placeId:
+          type: [string, "null"]
+          maxLength: 300
+          description: "장소 ID (PLACE_ID). 제공자 고유값. ADDRESS면 null"
+        placeName:
+          type: [string, "null"]
+          maxLength: 200
+          description: "장소명 (PLACE_NAME). ADDRESS면 null"
+        address:
+          type: [string, "null"]
+          maxLength: 300
+          description: "주소 (ADDRESS). 도로명 우선, 없으면 지번"
+        lat:
+          type: [number, "null"]
+          minimum: -90
+          maximum: 90
+          description: "위도 (LAT), 소수 7자리. null이면 위치 미확인"
+        lng:
+          type: [number, "null"]
+          minimum: -180
+          maximum: 180
+          description: "경도 (LNG), 소수 7자리. null이면 위치 미확인"
+        category:
+          oneOf:
+            - $ref: '#/components/schemas/PlaceCategory'
+            - type: "null"
+          description: "카테고리 코드 (CATEGORY). ADDRESS면 null"
+        fetchedAt:
+          $ref: './common.yaml#/components/schemas/LocalDateTime'
+      example:
+        provider: "KAKAO"
+        placeId: "12345678"   # 예시 값 (실제 카카오 ID 아님)
+        placeName: "서울시청"
+        address: "서울 중구 세종대로 110"
+        lat: 37.5662952
+        lng: 126.9779692
+        category: "ETC"
+        fetchedAt: "2026-11-28T20:00:00"
